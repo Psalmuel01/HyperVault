@@ -4,7 +4,7 @@
 //  Run this as your single deploy command on day-of.
 //
 //  Usage:
-//    npx hardhat run scripts/deploy-all.js --network passetHub
+//    npx hardhat run scripts/deploy-all.js --network polkadotTestnet
 // ─────────────────────────────────────────────────────────────
 
 const { ethers } = require("hardhat");
@@ -101,7 +101,7 @@ async function main() {
   console.log("  2. To enable live XCM once call bytes are known:");
   console.log(`     vault.setXcmConfig(mintBytes, redeemBytes, true)`);
   console.log("  3. Test the full flow:");
-  console.log(`     npx hardhat run scripts/test-deposit.js --network passetHub\n`);
+  console.log(`     npx hardhat run scripts/test-deposit.js --network polkadotTestnet\n`);
 }
 
 main()

@@ -4,7 +4,7 @@
 //  Run AFTER deploy.js
 //
 //  Usage:
-//    npx hardhat run scripts/test-deposit.js --network passetHub
+//    npx hardhat run scripts/test-deposit.js --network polkadotTestnet
 // ─────────────────────────────────────────────────────────────
 
 const hre = require("hardhat");
@@ -17,8 +17,8 @@ async function main() {
   // Load vault address from deploy output
   const vaultAddress = process.env.VAULT_ADDRESS
     || (fs.existsSync(".vault-address")
-        ? fs.readFileSync(".vault-address", "utf8").split("=")[1].trim()
-        : null);
+      ? fs.readFileSync(".vault-address", "utf8").split("=")[1].trim()
+      : null);
 
   if (!vaultAddress) {
     throw new Error("Set VAULT_ADDRESS env var or run deploy.js first.");
@@ -37,7 +37,7 @@ async function main() {
   console.log(`  DOT    : ${dotAddress}`);
 
   const vault = await ethers.getContractAt("HyperVault", vaultAddress, signer);
-  const dot   = await ethers.getContractAt("IERC20", dotAddress, signer);
+  const dot = await ethers.getContractAt("IERC20", dotAddress, signer);
 
   // 1 DOT = 1e10 Planck on Polkadot
   const ONE_DOT = ethers.parseUnits("1", 10);

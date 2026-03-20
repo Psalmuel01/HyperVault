@@ -7,7 +7,7 @@ import { getDefaultConfig } from '@rainbow-me/rainbowkit';
 import { defineChain } from 'viem';
 
 // ── Passet Hub (Polkadot Hub TestNet) ─────────────────────────
-export const passetHub = defineChain({
+export const polkadotTestnet = defineChain({
   id: 420420417,
   name: 'Polkadot Testnet',
   nativeCurrency: {
@@ -33,6 +33,6 @@ export const passetHub = defineChain({
 export const config = getDefaultConfig({
   appName: 'HyperVault',
   projectId: import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || 'hypervault-hackathon',
-  chains: [passetHub],
+  chains: [polkadotTestnet],
   ssr: false,
 });
