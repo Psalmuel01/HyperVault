@@ -6,9 +6,10 @@ interface PositionPanelProps {
   position: UserPosition;
   sharePrice: number;
   onWithdraw: (shares: number) => void;
+  onClaimWithdrawal: () => void;
 }
 
-const PositionPanel = ({ position, sharePrice, onWithdraw }: PositionPanelProps) => {
+const PositionPanel = ({ position, sharePrice, onWithdraw, onClaimWithdrawal }: PositionPanelProps) => {
   const [withdrawMode, setWithdrawMode] = useState(false);
   const [shareAmount, setShareAmount] = useState('');
   const numShares = parseFloat(shareAmount) || 0;
@@ -22,7 +23,7 @@ const PositionPanel = ({ position, sharePrice, onWithdraw }: PositionPanelProps)
     }
   };
 
-  if (position.shares === 0) {
+  if (position.shares === 0 && position.pendingWithdrawal <= 0) {
     return (
       <div className="bg-card border border-border rounded-lg p-5 flex flex-col items-center justify-center min-h-[200px] text-center">
         <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
@@ -46,6 +47,18 @@ const PositionPanel = ({ position, sharePrice, onWithdraw }: PositionPanelProps)
     <div className="bg-card border border-border rounded-lg p-5 space-y-3">
       <h3 className="font-display text-lg text-foreground">Your Position</h3>
 
+      {position.pendingWithdrawal > 0 && (
+        <div className="bg-muted rounded-md p-3 space-y-2">
+          <p className="text-[10px] font-mono text-muted-foreground tracking-widest uppercase">Pending Withdrawal</p>
+          <p className="text-sm font-mono text-foreground">
+            {position.pendingWithdrawal.toFixed(4)} DOT is ready once redeem settles.
+          </p>
+          <Button variant="vault" className="w-full py-4" onClick={onClaimWithdrawal}>
+            Claim Redeemed DOT
+          </Button>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-muted rounded-md p-3">
           <span className="text-[10px] font-mono text-muted-foreground tracking-widest uppercase block mb-1">Shares</span>
@@ -68,7 +81,12 @@ const PositionPanel = ({ position, sharePrice, onWithdraw }: PositionPanelProps)
       </div>
 
       {!withdrawMode ? (
-        <Button variant="vault-outline" className="w-full py-4" onClick={() => setWithdrawMode(true)}>
+        <Button
+          variant="vault-outline"
+          className="w-full py-4"
+          disabled={position.shares <= 0 || position.pendingWithdrawal > 0}
+          onClick={() => setWithdrawMode(true)}
+        >
           Withdraw
         </Button>
       ) : (

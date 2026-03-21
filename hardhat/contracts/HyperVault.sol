@@ -82,7 +82,7 @@ contract HyperVault is ReentrancyGuard, Ownable {
     /// @notice Sovereign account of this vault on Bifrost (used in XCM messages).
     ///         Computed off-chain from the vault's Polkadot Hub address and
     ///         passed in at deploy time.
-    bytes32 public immutable hubSovereign;
+    bytes32 public hubSovereign;
 
     // ─────────────────────────────────────────────────────────
     //  State
@@ -188,11 +188,14 @@ contract HyperVault is ReentrancyGuard, Ownable {
         bool enabled
     );
 
+    event HubSovereignUpdated(bytes32 hubSovereign);
+
     // ─────────────────────────────────────────────────────────
     //  Errors
     // ─────────────────────────────────────────────────────────
 
     error ZeroAmount();
+    error InvalidSovereign();
     error InsufficientShares(uint256 requested, uint256 available);
     error NothingToWithdraw();
     error TransferFailed();
@@ -361,6 +364,25 @@ contract HyperVault is ReentrancyGuard, Ownable {
         dotToken.safeTransfer(user, actual);
         uint256 yieldEarned = actual > expected ? actual - expected : 0;
         emit WithdrawalCompleted(user, actual, yieldEarned);
+    }
+
+    /**
+     * @notice Permissionless claim path for users in live XCM mode.
+     *         If enough DOT has arrived back to the vault, user can claim
+     *         the amount estimated at withdraw-initiation.
+     */
+    function claimWithdrawal() external nonReentrant {
+        uint256 expected = pendingWithdrawal[msg.sender];
+        if (expected == 0) revert NothingToWithdraw();
+
+        uint256 available = dotToken.balanceOf(address(this));
+        require(available >= expected, "redeem pending");
+
+        pendingWithdrawal[msg.sender] = 0;
+        pendingWithdrawalBalanceStart[msg.sender] = 0;
+
+        dotToken.safeTransfer(msg.sender, expected);
+        emit WithdrawalCompleted(msg.sender, expected, 0);
     }
 
     // ─────────────────────────────────────────────────────────
@@ -631,6 +653,15 @@ contract HyperVault is ReentrancyGuard, Ownable {
     {
         xcmRefTime   = _refTime;
         xcmProofSize = _proofSize;
+    }
+
+    /**
+     * @notice Update the Hub sovereign account used for XCM beneficiary paths.
+     */
+    function setHubSovereign(bytes32 _hubSovereign) external onlyOwner {
+        if (_hubSovereign == bytes32(0)) revert InvalidSovereign();
+        hubSovereign = _hubSovereign;
+        emit HubSovereignUpdated(_hubSovereign);
     }
 
     /**

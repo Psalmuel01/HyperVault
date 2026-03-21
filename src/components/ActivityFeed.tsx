@@ -7,6 +7,7 @@ interface ActivityFeedProps {
 const typeLabels: Record<string, { label: string; color: string }> = {
   deposit: { label: 'DEPOSIT', color: 'text-accent' },
   withdraw: { label: 'WITHDRAW', color: 'text-primary' },
+  claim: { label: 'CLAIM', color: 'text-accent' },
   xcm_dispatch: { label: 'XCM', color: 'text-secondary' },
   yield_accrual: { label: 'YIELD', color: 'text-accent' },
 };

@@ -14,6 +14,7 @@ export interface UserPosition {
   yieldEarned: number;
   yieldPercent: number;
   depositTimestamp: number | null;
+  pendingWithdrawal: number;
 }
 
 export interface VaultState {
@@ -28,7 +29,7 @@ export interface VaultState {
 
 export interface Transaction {
   id: string;
-  type: 'deposit' | 'withdraw' | 'xcm_dispatch' | 'yield_accrual';
+  type: 'deposit' | 'withdraw' | 'claim' | 'xcm_dispatch' | 'yield_accrual';
   user: string;
   amount: number;
   shares?: number;
@@ -115,6 +116,7 @@ export function useVault() {
     yieldEarned: 0,
     yieldPercent: 0,
     depositTimestamp: null,
+    pendingWithdrawal: 0,
   });
 
   // ── Contract reads: Vault state ────────────────────────────
@@ -193,7 +195,7 @@ export function useVault() {
   const userPosition: UserPosition = useMemo(() => {
     if (!contractReady || !userInfoRaw) return mockUserPosition;
 
-    const [shares, dotValue, estimatedYield, depositedAt] = userInfoRaw;
+    const [shares, dotValue, estimatedYield, depositedAt, pendingWithdrawal] = userInfoRaw;
     const tokenDecimals = Number(dotDecimalsRaw ?? DOT_DECIMALS);
 
     const sharesNum = fmtShares(shares);
@@ -207,6 +209,7 @@ export function useVault() {
       yieldEarned: yieldNum,
       yieldPercent: principal > 0 ? (yieldNum / principal) * 100 : 0,
       depositTimestamp: Number(depositedAt) > 0 ? Number(depositedAt) * 1000 : null,
+      pendingWithdrawal: fmtDot(pendingWithdrawal, tokenDecimals),
     };
   }, [contractReady, userInfoRaw, mockUserPosition, dotDecimalsRaw]);
 
@@ -414,6 +417,7 @@ export function useVault() {
         yieldEarned: newDotValue - (mockUserPosition.dotValue > 0 ? mockUserPosition.dotValue - mockUserPosition.yieldEarned + amount : amount),
         yieldPercent: 0,
         depositTimestamp: mockUserPosition.depositTimestamp || Date.now(),
+        pendingWithdrawal: mockUserPosition.pendingWithdrawal,
       });
       setMockVaultState(prev => ({
         ...prev,
@@ -488,6 +492,7 @@ export function useVault() {
         yieldEarned: newShares > 0 ? mockUserPosition.yieldEarned * (newShares / mockUserPosition.shares) : 0,
         yieldPercent: newShares > 0 ? mockUserPosition.yieldPercent : 0,
         depositTimestamp: newShares > 0 ? mockUserPosition.depositTimestamp : null,
+        pendingWithdrawal: mockUserPosition.pendingWithdrawal,
       });
       setMockVaultState(prev => ({
         ...prev,
@@ -506,6 +511,54 @@ export function useVault() {
     }, 3000);
   }, [userPosition, vaultState.sharePrice, contractReady, address, writeContractAsync, mockVaultState, mockUserPosition]);
 
+  const claimWithdrawal = useCallback(async () => {
+    if (userPosition.pendingWithdrawal <= 0) return;
+
+    if (contractReady && address) {
+      try {
+        setPendingTx({ type: 'Claiming redeemed DOT', hash: '' });
+
+        const claimHash = await writeContractAsync({
+          address: VAULT_ADDRESS,
+          abi: VAULT_ABI,
+          functionName: 'claimWithdrawal',
+          args: [],
+        });
+
+        setPendingTx({ type: 'Claiming redeemed DOT', hash: claimHash });
+        setPendingTxHash(claimHash);
+
+        const short = shortenAddress(address);
+        setTransactions(prev => [
+          {
+            id: Date.now().toString(),
+            type: 'claim',
+            user: short,
+            amount: userPosition.pendingWithdrawal,
+            timestamp: Date.now(),
+            status: 'pending',
+            txHash: claimHash,
+          },
+          ...prev,
+        ]);
+      } catch (err: unknown) {
+        setPendingTx(null);
+        setPendingTxHash(undefined);
+        const msg = err instanceof Error ? err.message : 'Transaction failed';
+        if (msg.includes('User rejected') || msg.includes('user rejected')) {
+          toast.error('Transaction rejected by user.');
+        } else {
+          toast.error(`Claim failed: ${msg.slice(0, 120)}`);
+        }
+      }
+      return;
+    }
+
+    // Mock mode: clear pending balance immediately.
+    setMockDotBalance(prev => prev + mockUserPosition.pendingWithdrawal);
+    setMockUserPosition(prev => ({ ...prev, pendingWithdrawal: 0 }));
+  }, [userPosition.pendingWithdrawal, contractReady, address, writeContractAsync, mockUserPosition.pendingWithdrawal]);
+
   return {
     connected: isConnected,
     walletAddress: address ?? '',
@@ -516,5 +569,6 @@ export function useVault() {
     pendingTx,
     deposit,
     withdraw,
+    claimWithdrawal,
   };
 }

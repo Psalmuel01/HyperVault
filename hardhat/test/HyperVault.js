@@ -78,4 +78,18 @@ describe("HyperVault", function () {
     const stateAfter = await vault.getVaultState();
     expect(stateAfter._totalShares).to.equal(0);
   });
+
+  it("allows owner to set hub sovereign and blocks non-owner", async function () {
+    const { owner, user, vault } = await loadFixture(deployFixture);
+    const newSovereign = "0x" + "11".repeat(32);
+
+    await expect(vault.connect(user).setHubSovereign(newSovereign))
+      .to.be.revertedWithCustomError(vault, "OwnableUnauthorizedAccount");
+
+    await expect(vault.connect(owner).setHubSovereign(newSovereign))
+      .to.emit(vault, "HubSovereignUpdated")
+      .withArgs(newSovereign);
+
+    expect(await vault.hubSovereign()).to.equal(newSovereign);
+  });
 });

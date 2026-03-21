@@ -49,7 +49,7 @@ const Index = () => {
           <span>
             {vault.vaultState.xcmEnabled
               ? 'XCM dispatch live — Bifrost parachain connected'
-              : 'XCM dispatch ready — Bifrost parachain connected'}
+              : 'XCM dispatch disabled — configure live mode before production deposits'}
           </span>
           <span className="ml-auto">
             {vault.vaultState.xcmEnabled
@@ -72,6 +72,7 @@ const Index = () => {
               position={vault.userPosition}
               sharePrice={vault.vaultState.sharePrice}
               onWithdraw={vault.withdraw}
+              onClaimWithdrawal={vault.claimWithdrawal}
             />
           </div>
           <ActivityFeed transactions={vault.transactions} />
