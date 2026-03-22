@@ -8,7 +8,7 @@ interface VaultStatsBarProps {
 
 const StatItem = ({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) => (
   <div className="flex flex-col gap-1">
-    <span className="text-[10px] font-mono text-muted-foreground tracking-widest uppercase">{label}</span>
+    <span className="text-[10px] font-ui font-semibold text-muted-foreground tracking-[0.14em] uppercase">{label}</span>
     <span className={`text-lg font-mono font-semibold ${accent ? 'text-accent' : 'text-foreground'}`}>{value}</span>
   </div>
 );

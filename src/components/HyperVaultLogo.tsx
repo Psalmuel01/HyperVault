@@ -12,7 +12,7 @@ const HyperVaultLogo = ({ className = '' }: { className?: string }) => (
     </div>
     <div>
       <h1 className="font-display text-xl tracking-tight text-foreground">HyperVault</h1>
-      <p className="text-[10px] font-mono text-muted-foreground tracking-widest uppercase">Polkadot Hub</p>
+      <p className="text-[10px] font-ui font-semibold text-muted-foreground tracking-[0.14em] uppercase">Polkadot Hub</p>
     </div>
   </div>
 );

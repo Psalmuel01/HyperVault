@@ -1,4 +1,5 @@
 import { Transaction } from '@/hooks/use-vault';
+import { BLOCK_EXPLORER } from '@/lib/contract';
 
 interface ActivityFeedProps {
   transactions: Transaction[];
@@ -37,14 +38,24 @@ const ActivityFeed = ({ transactions, tokenSymbol }: ActivityFeedProps) => {
             <div key={tx.id} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
               <div className="flex items-center gap-3">
                 <div className={`w-1.5 h-1.5 rounded-full ${statusDots[tx.status]}`} />
-                <span className={`text-[10px] font-mono font-semibold tracking-widest ${info.color}`}>
+                <span className={`text-[10px] font-ui font-semibold tracking-[0.14em] ${info.color}`}>
                   {info.label}
                 </span>
-                <span className="text-xs font-mono text-muted-foreground">{tx.user}</span>
+                <span className="text-sm font-ui text-muted-foreground">{tx.user}</span>
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-xs font-mono text-foreground">{tx.amount.toFixed(2)} {tokenSymbol}</span>
                 <span className="text-[10px] font-mono text-muted-foreground/60">{timeStr}</span>
+                {tx.txHash ? (
+                  <a
+                    href={`${BLOCK_EXPLORER}/tx/${tx.txHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] font-ui font-semibold text-primary/80 hover:text-primary"
+                  >
+                    view
+                  </a>
+                ) : null}
               </div>
             </div>
           );

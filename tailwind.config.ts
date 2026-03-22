@@ -15,8 +15,9 @@ export default {
     },
     extend: {
       fontFamily: {
-        display: ['"DM Serif Display"', 'serif'],
-        mono: ['"IBM Plex Mono"', 'monospace'],
+        display: ['"Sora"', '"Space Grotesk"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        ui: ['"Space Grotesk"', 'ui-sans-serif', 'system-ui', '-apple-system', '"Segoe UI"', 'sans-serif'],
+        mono: ['"JetBrains Mono"', '"IBM Plex Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       colors: {
         border: "hsl(var(--border))",

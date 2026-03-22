@@ -1,4 +1,5 @@
 import { ConnectButton } from '@rainbow-me/rainbowkit';
+import { Link } from 'react-router-dom';
 import HyperVaultLogo from '@/components/HyperVaultLogo';
 
 interface ConnectWalletProps {
@@ -9,6 +10,15 @@ interface ConnectWalletProps {
 const ConnectWallet = ({ vaultStats }: ConnectWalletProps) => {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden">
+      <div className="absolute top-5 right-6 z-20">
+        <Link
+          to="/about"
+          className="inline-flex items-center rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-[10px] font-ui font-semibold text-primary hover:bg-primary/15 tracking-[0.16em] uppercase transition-colors"
+        >
+          About
+        </Link>
+      </div>
+
       {/* Background grid */}
       <div className="absolute inset-0 opacity-[0.03]" style={{
         backgroundImage: 'linear-gradient(hsl(var(--primary)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--primary)) 1px, transparent 1px)',
@@ -30,9 +40,22 @@ const ConnectWallet = ({ vaultStats }: ConnectWalletProps) => {
             <br />
             <span className="text-gradient">No Bridges.</span>
           </h2>
-          <p className="font-mono text-sm text-muted-foreground max-w-md">
+          <p className="font-ui text-base text-muted-foreground max-w-md leading-7">
             Deposit {vaultStats.tokenSymbol} → Earn ~{vaultStats.apy}% APY via Bifrost vDOT → Withdraw {vaultStats.tokenSymbol} + yield.
           </p>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 w-full">
+          {[
+            '1. Connect',
+            '2. Deposit',
+            '3. Relay XCM',
+            '4. Withdraw + Claim',
+          ].map((step) => (
+            <div key={step} className="rounded-md border border-border bg-card/50 px-3 py-2 text-[11px] font-ui font-semibold text-muted-foreground text-center">
+              {step}
+            </div>
+          ))}
         </div>
 
         {/* RainbowKit ConnectButton — styled to match HyperVault theme */}
@@ -48,7 +71,7 @@ const ConnectWallet = ({ vaultStats }: ConnectWalletProps) => {
               >
                 <button
                   onClick={openConnectModal}
-                  className="px-12 py-4 text-sm font-mono font-semibold tracking-wider uppercase rounded-md bg-gradient-to-r from-primary to-secondary text-primary-foreground transition-all duration-300 hover:brightness-110 hover:scale-[1.02] active:scale-[0.98] glow-primary"
+                  className="px-12 py-4 text-sm font-ui font-semibold tracking-[0.14em] uppercase rounded-md bg-gradient-to-r from-primary to-secondary text-primary-foreground transition-all duration-300 hover:brightness-110 hover:scale-[1.02] active:scale-[0.98] glow-primary"
                 >
                   Connect Wallet
                 </button>
@@ -57,7 +80,7 @@ const ConnectWallet = ({ vaultStats }: ConnectWalletProps) => {
           }}
         </ConnectButton.Custom>
 
-        <div className="flex items-center gap-6 text-xs font-mono text-muted-foreground">
+        <div className="flex items-center gap-6 text-xs font-ui text-muted-foreground">
           <div className="flex items-center gap-2">
             <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
             <span>APY: ~{vaultStats.apy}%</span>
@@ -70,7 +93,7 @@ const ConnectWallet = ({ vaultStats }: ConnectWalletProps) => {
       </div>
 
       {/* Architecture hint */}
-      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 text-[10px] font-mono text-muted-foreground/40 tracking-widest uppercase">
+      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 text-[10px] font-ui font-semibold text-muted-foreground/40 tracking-[0.14em] uppercase">
         XCM · Polkadot Hub EVM · Solidity
       </div>
     </div>

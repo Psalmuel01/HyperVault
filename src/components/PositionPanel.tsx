@@ -6,11 +6,21 @@ interface PositionPanelProps {
   position: UserPosition;
   sharePrice: number;
   tokenSymbol: string;
+  xcmEnabled: boolean;
+  externalXcmExecutorMode: boolean;
   onWithdraw: (shares: number) => void;
   onClaimWithdrawal: () => void;
 }
 
-const PositionPanel = ({ position, sharePrice, tokenSymbol, onWithdraw, onClaimWithdrawal }: PositionPanelProps) => {
+const PositionPanel = ({
+  position,
+  sharePrice,
+  tokenSymbol,
+  xcmEnabled,
+  externalXcmExecutorMode,
+  onWithdraw,
+  onClaimWithdrawal,
+}: PositionPanelProps) => {
   const [withdrawMode, setWithdrawMode] = useState(false);
   const [shareAmount, setShareAmount] = useState('');
   const numShares = parseFloat(shareAmount) || 0;
@@ -34,8 +44,8 @@ const PositionPanel = ({ position, sharePrice, tokenSymbol, onWithdraw, onClaimW
             <path d="M2 12L12 17L22 12" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
           </svg>
         </div>
-        <p className="text-sm font-mono text-muted-foreground">No active position</p>
-        <p className="text-xs font-mono text-muted-foreground/60 mt-1">Deposit {tokenSymbol} to start earning yield</p>
+        <p className="text-sm font-ui text-muted-foreground">No active position</p>
+        <p className="text-sm font-ui text-muted-foreground/70 mt-1">Deposit {tokenSymbol} to start earning yield</p>
       </div>
     );
   }
@@ -48,10 +58,18 @@ const PositionPanel = ({ position, sharePrice, tokenSymbol, onWithdraw, onClaimW
     <div className="bg-card border border-border rounded-lg p-5 space-y-3">
       <h3 className="font-display text-lg text-foreground">Your Position</h3>
 
+      <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm font-ui text-muted-foreground leading-6">
+        {!xcmEnabled
+          ? 'Vault is in safe mode. You can withdraw, but cross-chain yield path is inactive.'
+          : externalXcmExecutorMode
+            ? `Withdraw creates a redeem request and wallet-relayed XCM. Claim ${tokenSymbol} after settlement.`
+            : `Withdraw dispatches redeem XCM from contract. Claim ${tokenSymbol} after settlement.`}
+      </div>
+
       {position.pendingWithdrawal > 0 && (
         <div className="bg-muted rounded-md p-3 space-y-2">
-          <p className="text-[10px] font-mono text-muted-foreground tracking-widest uppercase">Pending Withdrawal</p>
-          <p className="text-sm font-mono text-foreground">
+          <p className="text-[10px] font-ui font-semibold text-muted-foreground tracking-[0.14em] uppercase">Pending Withdrawal</p>
+          <p className="text-sm font-ui text-foreground">
             {position.pendingWithdrawal.toFixed(4)} {tokenSymbol} is ready once redeem settles.
           </p>
           <Button variant="vault" className="w-full py-4" onClick={onClaimWithdrawal}>
@@ -62,21 +80,21 @@ const PositionPanel = ({ position, sharePrice, tokenSymbol, onWithdraw, onClaimW
 
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-muted rounded-md p-3">
-          <span className="text-[10px] font-mono text-muted-foreground tracking-widest uppercase block mb-1">Shares</span>
+          <span className="text-[10px] font-ui font-semibold text-muted-foreground tracking-[0.14em] uppercase block mb-1">Shares</span>
           <span className="text-base font-mono font-semibold text-foreground">{position.shares.toFixed(4)}</span>
         </div>
         <div className="bg-muted rounded-md p-3">
-          <span className="text-[10px] font-mono text-muted-foreground tracking-widest uppercase block mb-1">DOT Value</span>
+          <span className="text-[10px] font-ui font-semibold text-muted-foreground tracking-[0.14em] uppercase block mb-1">DOT Value</span>
           <span className="text-base font-mono font-semibold text-foreground">{position.dotValue.toFixed(4)}</span>
         </div>
         <div className="bg-muted rounded-md p-3">
-          <span className="text-[10px] font-mono text-muted-foreground tracking-widest uppercase block mb-1">Yield Earned</span>
+          <span className="text-[10px] font-ui font-semibold text-muted-foreground tracking-[0.14em] uppercase block mb-1">Yield Earned</span>
           <span className="text-base font-mono font-semibold text-accent">
             +{position.yieldEarned.toFixed(4)} {tokenSymbol}
           </span>
         </div>
         <div className="bg-muted rounded-md p-3">
-          <span className="text-[10px] font-mono text-muted-foreground tracking-widest uppercase block mb-1">Deposited</span>
+          <span className="text-[10px] font-ui font-semibold text-muted-foreground tracking-[0.14em] uppercase block mb-1">Deposited</span>
           <span className="text-base font-mono font-semibold text-foreground">{depositAge}m ago</span>
         </div>
       </div>
@@ -102,22 +120,22 @@ const PositionPanel = ({ position, sharePrice, tokenSymbol, onWithdraw, onClaimW
             />
             <button
               onClick={() => setShareAmount(position.shares.toString())}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono font-semibold text-primary tracking-widest uppercase"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-ui font-semibold text-primary tracking-[0.14em] uppercase"
             >
               MAX
             </button>
           </div>
           {numShares > 0 && (
-            <p className="text-xs font-mono text-muted-foreground">
+            <p className="text-sm font-ui text-muted-foreground">
               {`You'll receive ≈ `}
-              <span className="text-accent">{dotOut.toFixed(4)} {tokenSymbol}</span>
+              <span className="text-accent font-mono">{dotOut.toFixed(4)} {tokenSymbol}</span>
             </p>
           )}
           <div className="flex gap-2">
             <Button variant="vault" className="flex-1 py-4" disabled={numShares <= 0 || numShares > position.shares} onClick={handleWithdraw}>
               Confirm Withdraw
             </Button>
-            <Button variant="ghost" className="py-4 text-xs font-mono text-muted-foreground" onClick={() => { setWithdrawMode(false); setShareAmount(''); }}>
+            <Button variant="ghost" className="py-4 text-xs font-ui text-muted-foreground" onClick={() => { setWithdrawMode(false); setShareAmount(''); }}>
               Cancel
             </Button>
           </div>

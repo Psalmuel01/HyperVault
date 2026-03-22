@@ -55,6 +55,7 @@ export interface Transaction {
 // ─────────────────────────────────────────────────────────────
 
 const MOCK_APY = 15.2;
+const NATIVE_WALLET_DECIMALS = 18;
 
 const generateTxHash = () =>
   '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
@@ -251,7 +252,9 @@ export function useVault() {
     if (!contractReady) return mockDotBalance;
     const tokenDecimals = Number(vaultDotDecimalsRaw ?? dotDecimalsRaw ?? DOT_DECIMALS);
     if (nativeDotMode) {
-      return fmtDot(nativeBalanceRaw?.value, tokenDecimals);
+      // Wallet/native EVM balance is exposed in 18-decimal units on Hub EVM.
+      // Keep vault accounting decimals unchanged; this path is display/user-balance only.
+      return fmtDot(nativeBalanceRaw?.value, NATIVE_WALLET_DECIMALS);
     }
     if (dotBalanceRaw === undefined) return mockDotBalance;
     return fmtDot(dotBalanceRaw, tokenDecimals);
