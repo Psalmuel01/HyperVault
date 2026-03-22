@@ -28,6 +28,7 @@ async function main() {
   const vault = await ethers.getContractAt("HyperVault", vaultAddress, signer);
 
   const state = await vault.getVaultState();
+  const nativeMode = await vault.nativeDotMode();
   const dotToken = await vault.dotToken();
   const dotDecimals = Number(await vault.dotDecimals());
   const dotCurrencyId = await vault.dotCurrencyId();
@@ -39,9 +40,12 @@ async function main() {
   const xcmProofSize = await vault.xcmProofSize();
   const hubSovereign = await vault.hubSovereign();
 
-  const dotAddress = (process.env.DOT_ERC20_ADDRESS || dotToken).trim();
-  const dot = await ethers.getContractAt("IERC20", dotAddress, signer);
-  const vaultDotBal = await dot.balanceOf(vaultAddress);
+  const dotAddress = nativeMode
+    ? ethers.ZeroAddress
+    : (process.env.DOT_ERC20_ADDRESS || dotToken).trim();
+  const vaultDotBal = nativeMode
+    ? await ethers.provider.getBalance(vaultAddress)
+    : await (await ethers.getContractAt("IERC20", dotAddress, signer)).balanceOf(vaultAddress);
   const isConfigured =
     state._xcmEnabled &&
     dotCurrencyId !== "0x0000" &&
@@ -53,6 +57,7 @@ async function main() {
   console.log("  HyperVault — Live Config Check");
   console.log("═══════════════════════════════════════════════");
   console.log(`  Vault            : ${vaultAddress}`);
+  console.log(`  Deposit mode     : ${nativeMode ? "NATIVE (canonical)" : "ERC20 token"}`);
   console.log(`  DOT token        : ${dotToken}`);
   console.log(`  DOT decimals     : ${dotDecimals}`);
   console.log(`  DOT currency id  : ${dotCurrencyId}`);

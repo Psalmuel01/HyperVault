@@ -38,6 +38,35 @@ describe("HyperVault", function () {
     return deployFixture(true);
   }
 
+  async function deployNativeFixture(xcmEnabled = false) {
+    const [owner, user] = await ethers.getSigners();
+
+    const BuildCallData = await ethers.getContractFactory("BuildCallData");
+    const buildCallData = await BuildCallData.deploy();
+    await buildCallData.waitForDeployment();
+
+    const HyperVault = await ethers.getContractFactory("HyperVault", {
+      libraries: {
+        BuildCallData: await buildCallData.getAddress(),
+      },
+    });
+
+    const vault = await HyperVault.deploy(
+      ethers.ZeroAddress,
+      ethers.ZeroHash,
+      xcmEnabled
+    );
+    await vault.waitForDeployment();
+
+    // Extra vault liquidity for mock yield payouts in native mode.
+    await owner.sendTransaction({
+      to: await vault.getAddress(),
+      value: ethers.parseUnits("5", 10),
+    });
+
+    return { owner, user, vault };
+  }
+
   it("mints shares on deposit and tracks user state", async function () {
     const { user, dot, vault } = await loadFixture(deployFixture);
     const depositAmount = ethers.parseEther("10");
@@ -152,5 +181,39 @@ describe("HyperVault", function () {
 
     const estimatedYield = await vault.getEstimatedYield(user.address);
     expect(estimatedYield).to.equal(0);
+  });
+
+  it("supports canonical native mode deposits and withdrawals", async function () {
+    const { user, vault } = await loadFixture(deployNativeFixture);
+    const depositAmount = ethers.parseUnits("10", 10);
+    const vaultAddress = await vault.getAddress();
+    await expect(
+      vault.connect(user).deposit(depositAmount, { value: depositAmount })
+    ).to.emit(vault, "Deposited");
+
+    const state = await vault.getVaultState();
+    expect(state._totalDotDeposited).to.equal(depositAmount);
+    expect(state._totalShares).to.equal(ethers.parseUnits("10", 18));
+
+    await time.increase(365 * 24 * 60 * 60);
+    await expect(vault.connect(user).withdraw(ethers.parseUnits("10", 18)))
+      .to.emit(vault, "WithdrawalCompleted");
+
+    const userInfoAfter = await vault.getUserInfo(user.address);
+    const stateAfter = await vault.getVaultState();
+    const vaultBalanceAfter = await ethers.provider.getBalance(vaultAddress);
+
+    expect(userInfoAfter._shares).to.equal(0);
+    expect(stateAfter._totalShares).to.equal(0);
+    expect(vaultBalanceAfter).to.be.lessThan(ethers.parseUnits("5", 10));
+  });
+
+  it("rejects mismatched msg.value in native mode", async function () {
+    const { user, vault } = await loadFixture(deployNativeFixture);
+    const amount = ethers.parseUnits("1", 10);
+
+    await expect(
+      vault.connect(user).deposit(amount, { value: amount - 1n })
+    ).to.be.revertedWithCustomError(vault, "InvalidNativeDeposit");
   });
 });

@@ -24,6 +24,11 @@ function maybeAddress(value) {
   return /^0x[a-fA-F0-9]{40}$/.test(raw) ? raw : null;
 }
 
+function parseBool(name) {
+  const raw = (process.env[name] || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
+}
+
 function maybeAssetIdToErc20(name) {
   const raw = (process.env[name] || "").trim();
   if (!raw) return null;
@@ -57,12 +62,15 @@ function maybeBytes32(name) {
 
 async function main() {
   const [deployer] = await ethers.getSigners();
+  const useNativeDot = parseBool("USE_NATIVE_DOT");
 
-  const explicitDot = maybeAddress(process.env.DOT_ERC20_ADDRESS);
-  const derivedDot = maybeAssetIdToErc20("DOT_ASSET_ID");
-  const dotTokenAddress = explicitDot || derivedDot;
+  const explicitDot = useNativeDot ? null : maybeAddress(process.env.DOT_ERC20_ADDRESS);
+  const derivedDot = useNativeDot ? null : maybeAssetIdToErc20("DOT_ASSET_ID");
+  const dotTokenAddress = useNativeDot
+    ? ethers.ZeroAddress
+    : (explicitDot || derivedDot);
   if (!dotTokenAddress) {
-    throw new Error("Set DOT_ERC20_ADDRESS (or DOT_ASSET_ID to derive precompile address).");
+    throw new Error("Set USE_NATIVE_DOT=true for canonical mode, or set DOT_ERC20_ADDRESS/DOT_ASSET_ID.");
   }
   const hubSovereign = maybeBytes32("HUB_SOVEREIGN");
 
@@ -73,11 +81,12 @@ async function main() {
   console.log(`  Balance : ${ethers.formatEther(
     await ethers.provider.getBalance(deployer.address)
   )} PAS`);
-  console.log(`  DOT ERC20: ${dotTokenAddress}`);
-  if ((process.env.DOT_ERC20_ADDRESS || "").trim() && !explicitDot) {
+  console.log(`  Deposit mode: ${useNativeDot ? "NATIVE (canonical PAS/DOT)" : "ERC20 token"}`);
+  console.log(`  DOT token  : ${dotTokenAddress}`);
+  if (!useNativeDot && (process.env.DOT_ERC20_ADDRESS || "").trim() && !explicitDot) {
     console.log("  Note: ignored invalid DOT_ERC20_ADDRESS env value");
   }
-  if ((process.env.DOT_ASSET_ID || "").trim()) {
+  if (!useNativeDot && (process.env.DOT_ASSET_ID || "").trim()) {
     console.log(`  DOT_ASSET_ID: ${process.env.DOT_ASSET_ID.trim()} (derived precompile)`);
   }
   console.log(`  Hub Sovereign: ${hubSovereign}\n`);
@@ -108,6 +117,7 @@ async function main() {
 
   const frontendEnv = [
     `VITE_DOT_TOKEN_ADDRESS=${dotTokenAddress}`,
+    `VITE_USE_NATIVE_DOT=${useNativeDot ? "true" : "false"}`,
     `VITE_VAULT_ADDRESS=${vaultAddress}`,
     `VITE_CHAIN_ID=420420417`,
     `VITE_RPC_URL=https://services.polkadothub-rpc.com/testnet`,
@@ -117,6 +127,7 @@ async function main() {
   const deployMeta = [
     `VAULT_ADDRESS=${vaultAddress}`,
     `DOT_ERC20_ADDRESS=${dotTokenAddress}`,
+    `USE_NATIVE_DOT=${useNativeDot ? "true" : "false"}`,
     `BUILD_CALL_DATA_ADDRESS=${libAddress}`,
     `HUB_SOVEREIGN=${hubSovereign}`,
   ].join("\n") + "\n";

@@ -23,50 +23,72 @@ function loadEnvFileValue(path, key) {
   return null;
 }
 
+function normalizeAddress(value) {
+  const raw = (value || "").trim();
+  return /^0x[a-fA-F0-9]{40}$/.test(raw) ? raw : null;
+}
+
 async function main() {
   const [signer] = await ethers.getSigners();
 
   // Load vault address from deploy output
-  const vaultAddress = process.env.VAULT_ADDRESS
-    || loadEnvFileValue(".vault-address", "VAULT_ADDRESS");
+  const vaultAddress = normalizeAddress(process.env.VAULT_ADDRESS)
+    || normalizeAddress(loadEnvFileValue(".vault-address", "VAULT_ADDRESS"));
 
   if (!vaultAddress) {
     throw new Error("Set VAULT_ADDRESS env var or run deploy.js first.");
   }
 
-  const dotAddress = process.env.DOT_ERC20_ADDRESS;
-  if (!dotAddress) {
-    throw new Error("Set DOT_ERC20_ADDRESS env var.");
-  }
+  const dotAddress = normalizeAddress(process.env.DOT_ERC20_ADDRESS);
 
   console.log("\n═══════════════════════════════════════════════");
   console.log("  HyperVault — Smoke Test");
   console.log("═══════════════════════════════════════════════");
   console.log(`  Signer : ${signer.address}`);
   console.log(`  Vault  : ${vaultAddress}`);
-  console.log(`  DOT    : ${dotAddress}`);
 
   const vault = await ethers.getContractAt("HyperVault", vaultAddress, signer);
-  const dot = await ethers.getContractAt("IERC20", dotAddress, signer);
+  const nativeMode = await vault.nativeDotMode();
   const dotDecimals = Number(await vault.dotDecimals());
-  const dotSymbol = dotDecimals === 10 ? "DOT" : "TOKEN";
+  const dotSymbol = dotDecimals === 10 ? "DOT/PAS" : "TOKEN";
+  const resolvedDotAddress = nativeMode
+    ? ethers.ZeroAddress
+    : (dotAddress || await vault.dotToken());
+  const dot = nativeMode
+    ? null
+    : await ethers.getContractAt("IERC20", resolvedDotAddress, signer);
+  console.log(`  Mode   : ${nativeMode ? "NATIVE" : "ERC20"}`);
+  console.log(`  DOT    : ${nativeMode ? "(native chain token)" : resolvedDotAddress}`);
 
-  const ONE_TOKEN = ethers.parseUnits("1", dotDecimals);
-  const DEPOSIT_AMOUNT = ONE_TOKEN * 5n; // 5 units
+  const amountHuman = (process.env.DEPOSIT_AMOUNT || "5").trim();
+  const DEPOSIT_AMOUNT = ethers.parseUnits(amountHuman, dotDecimals);
+  const userBalance = nativeMode
+    ? await ethers.provider.getBalance(signer.address)
+    : await dot.balanceOf(signer.address);
 
-  console.log(`\n[1] Token balance: ${ethers.formatUnits(
-    await dot.balanceOf(signer.address), dotDecimals
-  )} ${dotSymbol}`);
+  console.log(`\n[1] Token balance: ${ethers.formatUnits(userBalance, dotDecimals)} ${dotSymbol}`);
+  if (userBalance < DEPOSIT_AMOUNT) {
+    throw new Error(
+      `Insufficient token balance for deposit. Need ${amountHuman} ${dotSymbol}, have ${ethers.formatUnits(userBalance, dotDecimals)} ${dotSymbol}. ` +
+      `Top up first with scripts/mint-test-token.js for test tokens.`
+    );
+  }
 
-  // Approve
-  console.log(`[2] Approving vault for ${ethers.formatUnits(DEPOSIT_AMOUNT, dotDecimals)} ${dotSymbol}...`);
-  const approveTx = await dot.approve(vaultAddress, DEPOSIT_AMOUNT);
-  await approveTx.wait();
-  console.log(`    ✅ Approved (tx: ${approveTx.hash})`);
+  if (!nativeMode) {
+    // Approve
+    console.log(`[2] Approving vault for ${ethers.formatUnits(DEPOSIT_AMOUNT, dotDecimals)} ${dotSymbol}...`);
+    const approveTx = await dot.approve(vaultAddress, DEPOSIT_AMOUNT);
+    await approveTx.wait();
+    console.log(`    ✅ Approved (tx: ${approveTx.hash})`);
+  } else {
+    console.log(`[2] Native mode: approval skipped.`);
+  }
 
   // Deposit
   console.log(`[3] Depositing ${ethers.formatUnits(DEPOSIT_AMOUNT, dotDecimals)} ${dotSymbol}...`);
-  const depositTx = await vault.deposit(DEPOSIT_AMOUNT, { gasLimit: 500_000 });
+  const depositTx = nativeMode
+    ? await vault.deposit(DEPOSIT_AMOUNT, { value: DEPOSIT_AMOUNT, gasLimit: 500_000 })
+    : await vault.deposit(DEPOSIT_AMOUNT, { gasLimit: 500_000 });
   const receipt = await depositTx.wait();
   console.log(`    ✅ Deposited (tx: ${depositTx.hash})`);
 

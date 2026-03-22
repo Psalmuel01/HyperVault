@@ -56,6 +56,7 @@ function parseUint(name, fallback, max = Number.MAX_SAFE_INTEGER) {
 
 async function main() {
   const [signer] = await ethers.getSigners();
+  const network = await ethers.provider.getNetwork();
   const vaultAddress = requireAddress("VAULT_ADDRESS");
   const dotCurrencyId = requireBytesN("DOT_CURRENCY_ID", 2);
   const vDotCurrencyId = requireBytesN("VDOT_CURRENCY_ID", 2);
@@ -66,6 +67,14 @@ async function main() {
   const proofSize = parseUint("XCM_PROOF_SIZE", 131_072);
 
   const vault = await ethers.getContractAt("HyperVault", vaultAddress, signer);
+  const nativeMode = await vault.nativeDotMode();
+
+  if (network.chainId === 420420417n) {
+    console.log("⚠ Chain 420420417 uses canonical PAS (Paseo), not DOT.");
+  }
+  if (!nativeMode) {
+    console.log("⚠ Vault is in ERC20 mode. This is fallback/test mode, not canonical asset mode.");
+  }
 
   console.log(`Configuring live XCM on ${vaultAddress}...`);
   const setWeightsTx = await vault.setXcmWeights(refTime, proofSize);

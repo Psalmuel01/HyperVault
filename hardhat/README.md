@@ -7,8 +7,9 @@ This workspace deploys and configures `HyperVault.sol` for **Polkadot Hub Testne
 Set these before running deployment/config scripts:
 
 - `PRIVATE_KEY` deployer key (0x-prefixed).
-- `DOT_ERC20_ADDRESS` DOT ERC-20 precompile address on Polkadot Hub.
-- `DOT_ASSET_ID` optional alternative; if set, deploy script derives `DOT_ERC20_ADDRESS`.
+- `USE_NATIVE_DOT=true` to use canonical native token mode (recommended).
+- `DOT_ERC20_ADDRESS` only for ERC-20 fallback mode.
+- `DOT_ASSET_ID` optional alternative in ERC-20 mode; deploy script derives `DOT_ERC20_ADDRESS`.
 - `VAULT_ADDRESS` set after deployment (for follow-up scripts).
 
 Optional:
@@ -22,9 +23,9 @@ Optional:
 1. Deploy:
 
 ```bash
-DOT_ERC20_ADDRESS=0x... npx hardhat run scripts/deploy-all.js --network polkadotTestnet
+USE_NATIVE_DOT=true npx hardhat run scripts/deploy-all.js --network polkadotTestnet
 # or
-DOT_ASSET_ID=<DOT_ASSET_ID> npx hardhat run scripts/deploy-all.js --network polkadotTestnet
+DOT_ERC20_ADDRESS=0x... npx hardhat run scripts/deploy-all.js --network polkadotTestnet
 ```
 
 Preflight probe (recommended before deploy):
@@ -51,10 +52,22 @@ CHANNEL_ID=0 \
 npx hardhat run scripts/configure-live-xcm.js --network polkadotTestnet
 ```
 
-4. Deposit smoke test:
+If live XCM needs to be paused quickly:
 
 ```bash
-VAULT_ADDRESS=0x... DOT_ERC20_ADDRESS=0x... npx hardhat run scripts/test-deposit.js --network polkadotTestnet
+VAULT_ADDRESS=0x... npx hardhat run scripts/disable-live-xcm.js --network polkadotTestnet
+```
+
+4. Deposit smoke test (auto-detects native vs ERC-20 mode):
+
+```bash
+VAULT_ADDRESS=0x... npx hardhat run scripts/test-deposit.js --network polkadotTestnet
+```
+
+If using test ERC20 (like `tDOT`) and your balance is low, mint first:
+
+```bash
+DOT_ERC20_ADDRESS=0x... AMOUNT=50 npx hardhat run scripts/mint-test-token.js --network polkadotTestnet
 ```
 
 5. Read-only live config check:

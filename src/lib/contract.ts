@@ -13,6 +13,7 @@ export const BLOCK_EXPLORER = 'https://blockscout-passet-hub.parity-testnet.pari
 // ── Contract addresses (set via env vars, or fallback empty) ─
 export const VAULT_ADDRESS = (import.meta.env.VITE_VAULT_ADDRESS ?? '') as Address;
 export const DOT_TOKEN_ADDRESS = (import.meta.env.VITE_DOT_TOKEN_ADDRESS ?? '') as Address;
+export const USE_NATIVE_DOT = String(import.meta.env.VITE_USE_NATIVE_DOT ?? '').toLowerCase() === 'true';
 
 // ── DOT decimals on Polkadot Hub ─────────────────────────────
 export const DOT_DECIMALS = 10;
@@ -59,6 +60,7 @@ export const ERC20_ABI = [
 export const VAULT_ABI = [
   { inputs: [{ internalType: 'address', name: '_dotToken', type: 'address' }, { internalType: 'bytes32', name: '_hubSovereign', type: 'bytes32' }, { internalType: 'bool', name: '_xcmEnabled', type: 'bool' }], stateMutability: 'nonpayable', type: 'constructor' },
   { inputs: [{ internalType: 'uint256', name: 'requested', type: 'uint256' }, { internalType: 'uint256', name: 'available', type: 'uint256' }], name: 'InsufficientShares', type: 'error' },
+  { inputs: [{ internalType: 'uint256', name: 'expected', type: 'uint256' }, { internalType: 'uint256', name: 'actual', type: 'uint256' }], name: 'InvalidNativeDeposit', type: 'error' },
   { inputs: [], name: 'InvalidSovereign', type: 'error' },
   { inputs: [], name: 'NothingToWithdraw', type: 'error' },
   { inputs: [{ internalType: 'address', name: 'owner', type: 'address' }], name: 'OwnableInvalidOwner', type: 'error' },
@@ -66,8 +68,10 @@ export const VAULT_ABI = [
   { inputs: [], name: 'ReentrancyGuardReentrantCall', type: 'error' },
   { inputs: [{ internalType: 'address', name: 'token', type: 'address' }], name: 'SafeERC20FailedOperation', type: 'error' },
   { inputs: [], name: 'TransferFailed', type: 'error' },
+  { inputs: [{ internalType: 'uint256', name: 'actual', type: 'uint256' }], name: 'UnexpectedNativeValue', type: 'error' },
   { inputs: [], name: 'VaultPaused', type: 'error' },
   { inputs: [], name: 'XcmCallFailed', type: 'error' },
+  { inputs: [], name: 'XcmNotConfigured', type: 'error' },
   { inputs: [], name: 'ZeroAmount', type: 'error' },
   { anonymous: false, inputs: [{ indexed: true, internalType: 'address', name: 'user', type: 'address' }, { indexed: false, internalType: 'uint256', name: 'dotAmount', type: 'uint256' }, { indexed: false, internalType: 'uint256', name: 'sharesIssued', type: 'uint256' }, { indexed: false, internalType: 'uint256', name: 'sharePrice', type: 'uint256' }], name: 'Deposited', type: 'event' },
   { anonymous: false, inputs: [{ indexed: false, internalType: 'uint256', name: 'yieldAdded', type: 'uint256' }, { indexed: false, internalType: 'uint256', name: 'newTotalDot', type: 'uint256' }], name: 'MockYieldAccrued', type: 'event' },
@@ -87,7 +91,7 @@ export const VAULT_ABI = [
   { inputs: [], name: 'claimWithdrawal', outputs: [], stateMutability: 'nonpayable', type: 'function' },
   { inputs: [{ internalType: 'address', name: 'user', type: 'address' }], name: 'completeWithdrawal', outputs: [], stateMutability: 'nonpayable', type: 'function' },
   { inputs: [], name: 'currentSharePrice', outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }], stateMutability: 'view', type: 'function' },
-  { inputs: [{ internalType: 'uint256', name: 'amount', type: 'uint256' }], name: 'deposit', outputs: [], stateMutability: 'nonpayable', type: 'function' },
+  { inputs: [{ internalType: 'uint256', name: 'amount', type: 'uint256' }], name: 'deposit', outputs: [], stateMutability: 'payable', type: 'function' },
   { inputs: [{ internalType: 'address', name: '', type: 'address' }], name: 'depositTimestamp', outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }], stateMutability: 'view', type: 'function' },
   { inputs: [], name: 'depositorCount', outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }], stateMutability: 'view', type: 'function' },
   { inputs: [], name: 'destChainIndexRaw', outputs: [{ internalType: 'bytes1', name: '', type: 'bytes1' }], stateMutability: 'view', type: 'function' },
@@ -101,6 +105,7 @@ export const VAULT_ABI = [
   { inputs: [], name: 'hubSovereign', outputs: [{ internalType: 'bytes32', name: '', type: 'bytes32' }], stateMutability: 'view', type: 'function' },
   { inputs: [], name: 'lastYieldTimestamp', outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }], stateMutability: 'view', type: 'function' },
   { inputs: [], name: 'mockAccruedYield', outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }], stateMutability: 'view', type: 'function' },
+  { inputs: [], name: 'nativeDotMode', outputs: [{ internalType: 'bool', name: '', type: 'bool' }], stateMutability: 'view', type: 'function' },
   { inputs: [], name: 'owner', outputs: [{ internalType: 'address', name: '', type: 'address' }], stateMutability: 'view', type: 'function' },
   { inputs: [], name: 'paused', outputs: [{ internalType: 'bool', name: '', type: 'bool' }], stateMutability: 'view', type: 'function' },
   { inputs: [{ internalType: 'address', name: '', type: 'address' }], name: 'pendingWithdrawal', outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }], stateMutability: 'view', type: 'function' },

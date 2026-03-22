@@ -5,7 +5,8 @@ pragma solidity ^0.8.20;
 //  HyperVault.sol
 //
 //  A Solidity-native yield vault on Polkadot Hub that:
-//    1. Accepts DOT deposits (via ERC-20 precompile for DOT)
+//    1. Accepts canonical hub token deposits (native PAS/DOT), with
+//       optional ERC-20 mode for testing and compatibility
 //    2. Sends DOT to Bifrost (parachain 2030) via XCM to mint vDOT
 //    3. Tracks each user's proportional share of the vault
 //    4. On withdrawal, dispatches XCM to Bifrost to redeem vDOT → DOT
@@ -73,8 +74,11 @@ contract HyperVault is ReentrancyGuard, Ownable {
     //  Immutables
     // ─────────────────────────────────────────────────────────
 
-    /// @notice DOT token via the ERC-20 precompile on Polkadot Hub.
+    /// @notice DOT/PAS token address in ERC-20 mode (zero in native mode).
     IERC20 public immutable dotToken;
+
+    /// @notice True when deposits use chain-native asset via msg.value.
+    bool public immutable nativeDotMode;
 
     /// @notice DOT decimals (used for share math).
     uint8 public immutable dotDecimals;
@@ -202,6 +206,8 @@ contract HyperVault is ReentrancyGuard, Ownable {
     error XcmCallFailed();
     error VaultPaused();
     error XcmNotConfigured();
+    error InvalidNativeDeposit(uint256 expected, uint256 actual);
+    error UnexpectedNativeValue(uint256 actual);
 
     // ─────────────────────────────────────────────────────────
     //  Pause
@@ -219,7 +225,8 @@ contract HyperVault is ReentrancyGuard, Ownable {
     // ─────────────────────────────────────────────────────────
 
     /**
-     * @param _dotToken     Address of the DOT ERC-20 precompile on Polkadot Hub.
+     * @param _dotToken     Address of DOT/PAS ERC-20 token in ERC-20 mode.
+     *                      Set to address(0) to use canonical native mode.
      * @param _hubSovereign 32-byte sovereign account of this contract on Bifrost.
      * @param _xcmEnabled   Start in live XCM mode (true) or mock mode (false).
      */
@@ -229,7 +236,8 @@ contract HyperVault is ReentrancyGuard, Ownable {
         bool    _xcmEnabled
     ) Ownable(msg.sender) {
         dotToken      = IERC20(_dotToken);
-        dotDecimals   = _safeReadDecimals(_dotToken);
+        nativeDotMode = _dotToken == address(0);
+        dotDecimals   = nativeDotMode ? 10 : _safeReadDecimals(_dotToken);
         hubSovereign  = _hubSovereign;
         xcmEnabled    = _xcmEnabled;
         lastYieldTimestamp = block.timestamp;
@@ -246,14 +254,14 @@ contract HyperVault is ReentrancyGuard, Ownable {
      *
      * @param amount Amount of DOT in the DOT token's base units (ERC-20 smallest unit).
      */
-    function deposit(uint256 amount) external nonReentrant whenNotPaused {
+    function deposit(uint256 amount) external payable nonReentrant whenNotPaused {
         if (amount == 0) revert ZeroAmount();
 
         // Accrue mock yield before changing balances (keeps share price fresh).
         _accrueMockYield();
 
-        // Pull DOT from caller.
-        dotToken.safeTransferFrom(msg.sender, address(this), amount);
+        // Pull DOT/PAS from caller.
+        _pullDotFromSender(amount);
 
         // ── Share calculation (ERC-4626 style) ───────────────
         // First depositor: 1 DOT (10^decimals) = INITIAL_SHARE_PRICE shares.
@@ -321,7 +329,7 @@ contract HyperVault is ReentrancyGuard, Ownable {
             // ── Live mode: async via XCM ──────────────────────
             require(pendingWithdrawal[msg.sender] == 0, "pending withdrawal exists");
             pendingWithdrawal[msg.sender] = dotOwed;
-            pendingWithdrawalBalanceStart[msg.sender] = dotToken.balanceOf(address(this));
+            pendingWithdrawalBalanceStart[msg.sender] = _vaultDotBalance();
             _dispatchRedeem(msg.sender, dotOwed);
         }
     }
@@ -347,7 +355,7 @@ contract HyperVault is ReentrancyGuard, Ownable {
         pendingWithdrawal[user] = 0;
         pendingWithdrawalBalanceStart[user] = 0;
 
-        uint256 currentBal = dotToken.balanceOf(address(this));
+        uint256 currentBal = _vaultDotBalance();
         if (currentBal < startBal) revert TransferFailed();
 
         uint256 actual = currentBal - startBal;
@@ -362,7 +370,7 @@ contract HyperVault is ReentrancyGuard, Ownable {
             totalDotDeposited += refund;
         }
 
-        dotToken.safeTransfer(user, actual);
+        _pushDot(user, actual);
         uint256 yieldEarned = actual > expected ? actual - expected : 0;
         emit WithdrawalCompleted(user, actual, yieldEarned);
     }
@@ -376,13 +384,13 @@ contract HyperVault is ReentrancyGuard, Ownable {
         uint256 expected = pendingWithdrawal[msg.sender];
         if (expected == 0) revert NothingToWithdraw();
 
-        uint256 available = dotToken.balanceOf(address(this));
+        uint256 available = _vaultDotBalance();
         require(available >= expected, "redeem pending");
 
         pendingWithdrawal[msg.sender] = 0;
         pendingWithdrawalBalanceStart[msg.sender] = 0;
 
-        dotToken.safeTransfer(msg.sender, expected);
+        _pushDot(msg.sender, expected);
         emit WithdrawalCompleted(msg.sender, expected, 0);
     }
 
@@ -487,14 +495,14 @@ contract HyperVault is ReentrancyGuard, Ownable {
 
     function _settleMockWithdrawal(address user, uint256 dotOwed) internal {
         // In mock mode the contract holds the DOT; transfer directly.
-        uint256 available = dotToken.balanceOf(address(this));
+        uint256 available = _vaultDotBalance();
         uint256 toSend    = dotOwed > available ? available : dotOwed;
 
         uint256 userDeposit = depositTimestamp[user] > 0
             ? _estimateUserYield(user)
             : 0;
 
-        dotToken.safeTransfer(user, toSend);
+        _pushDot(user, toSend);
         emit WithdrawalCompleted(user, toSend, userDeposit);
     }
 
@@ -682,7 +690,35 @@ contract HyperVault is ReentrancyGuard, Ownable {
      */
     function rescueDot(address to, uint256 amount) external onlyOwner {
         require(paused, "Unpause first");
+        _pushDot(to, amount);
+    }
+
+    receive() external payable {}
+
+    function _pullDotFromSender(uint256 amount) internal {
+        if (nativeDotMode) {
+            if (msg.value != amount) {
+                revert InvalidNativeDeposit(amount, msg.value);
+            }
+            return;
+        }
+
+        if (msg.value != 0) revert UnexpectedNativeValue(msg.value);
+        dotToken.safeTransferFrom(msg.sender, address(this), amount);
+    }
+
+    function _pushDot(address to, uint256 amount) internal {
+        if (nativeDotMode) {
+            (bool ok, ) = payable(to).call{value: amount}("");
+            if (!ok) revert TransferFailed();
+            return;
+        }
         dotToken.safeTransfer(to, amount);
+    }
+
+    function _vaultDotBalance() internal view returns (uint256) {
+        if (nativeDotMode) return address(this).balance;
+        return dotToken.balanceOf(address(this));
     }
 
     function _safeReadDecimals(address token) internal view returns (uint8) {
