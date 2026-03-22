@@ -36,6 +36,11 @@ Copy those values into:
 
 - `/Users/sam/Desktop/Polkadot/HyperVault/.env`
 
+For current Hub testnet runtime behavior, keep:
+
+- `VITE_USE_NATIVE_DOT=true`
+- `VITE_AUTO_RELAY_XCM=true` (frontend relays prepared XCM from wallet)
+
 ## Contract Deployment
 
 Use the Hardhat workspace guide:

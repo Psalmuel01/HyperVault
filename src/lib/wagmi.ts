@@ -14,7 +14,7 @@ export const polkadotTestnet = defineChain({
   nativeCurrency: {
     name: 'PAS',
     symbol: 'PAS',
-    decimals: 18,
+    decimals: 10,
   },
   rpcUrls: {
     default: {

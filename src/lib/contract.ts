@@ -9,11 +9,13 @@ import { type Address } from 'viem';
 export const PASSET_HUB_CHAIN_ID = 420420417;
 export const PASSET_HUB_RPC = 'https://services.polkadothub-rpc.com/testnet';
 export const BLOCK_EXPLORER = 'https://blockscout-passet-hub.parity-testnet.parity.io';
+export const XCM_PRECOMPILE = '0x00000000000000000000000000000000000a0000' as Address;
 
 // ── Contract addresses (set via env vars, or fallback empty) ─
 export const VAULT_ADDRESS = (import.meta.env.VITE_VAULT_ADDRESS ?? '') as Address;
 export const DOT_TOKEN_ADDRESS = (import.meta.env.VITE_DOT_TOKEN_ADDRESS ?? '') as Address;
 export const USE_NATIVE_DOT = String(import.meta.env.VITE_USE_NATIVE_DOT ?? '').toLowerCase() === 'true';
+export const AUTO_RELAY_XCM = String(import.meta.env.VITE_AUTO_RELAY_XCM ?? 'true').toLowerCase() !== 'false';
 
 // ── DOT decimals on Polkadot Hub ─────────────────────────────
 export const DOT_DECIMALS = 10;
@@ -56,6 +58,19 @@ export const ERC20_ABI = [
   },
 ] as const;
 
+export const XCM_PRECOMPILE_ABI = [
+  {
+    inputs: [
+      { name: 'dest', type: 'bytes' },
+      { name: 'message', type: 'bytes' },
+    ],
+    name: 'send',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+] as const;
+
 // ── HyperVault ABI ───────────────────────────────────────────
 export const VAULT_ABI = [
   { inputs: [{ internalType: 'address', name: '_dotToken', type: 'address' }, { internalType: 'bytes32', name: '_hubSovereign', type: 'bytes32' }, { internalType: 'bool', name: '_xcmEnabled', type: 'bool' }], stateMutability: 'nonpayable', type: 'constructor' },
@@ -74,6 +89,7 @@ export const VAULT_ABI = [
   { inputs: [], name: 'XcmNotConfigured', type: 'error' },
   { inputs: [], name: 'ZeroAmount', type: 'error' },
   { anonymous: false, inputs: [{ indexed: true, internalType: 'address', name: 'user', type: 'address' }, { indexed: false, internalType: 'uint256', name: 'dotAmount', type: 'uint256' }, { indexed: false, internalType: 'uint256', name: 'sharesIssued', type: 'uint256' }, { indexed: false, internalType: 'uint256', name: 'sharePrice', type: 'uint256' }], name: 'Deposited', type: 'event' },
+  { anonymous: false, inputs: [{ indexed: false, internalType: 'bool', name: 'enabled', type: 'bool' }], name: 'ExternalXcmExecutorModeUpdated', type: 'event' },
   { anonymous: false, inputs: [{ indexed: false, internalType: 'uint256', name: 'yieldAdded', type: 'uint256' }, { indexed: false, internalType: 'uint256', name: 'newTotalDot', type: 'uint256' }], name: 'MockYieldAccrued', type: 'event' },
   { anonymous: false, inputs: [{ indexed: false, internalType: 'bytes32', name: 'hubSovereign', type: 'bytes32' }], name: 'HubSovereignUpdated', type: 'event' },
   { anonymous: false, inputs: [{ indexed: true, internalType: 'address', name: 'previousOwner', type: 'address' }, { indexed: true, internalType: 'address', name: 'newOwner', type: 'address' }], name: 'OwnershipTransferred', type: 'event' },
@@ -81,6 +97,7 @@ export const VAULT_ABI = [
   { anonymous: false, inputs: [{ indexed: true, internalType: 'address', name: 'user', type: 'address' }, { indexed: false, internalType: 'uint256', name: 'sharesBurned', type: 'uint256' }, { indexed: false, internalType: 'uint256', name: 'dotEstimate', type: 'uint256' }], name: 'WithdrawalInitiated', type: 'event' },
   { anonymous: false, inputs: [{ indexed: false, internalType: 'bytes2', name: 'dotCurrencyId', type: 'bytes2' }, { indexed: false, internalType: 'bytes2', name: 'vDotCurrencyId', type: 'bytes2' }, { indexed: false, internalType: 'bytes1', name: 'destChainIndexRaw', type: 'bytes1' }, { indexed: false, internalType: 'string', name: 'remark', type: 'string' }, { indexed: false, internalType: 'uint32', name: 'channelId', type: 'uint32' }, { indexed: false, internalType: 'bool', name: 'enabled', type: 'bool' }], name: 'XcmConfigUpdated', type: 'event' },
   { anonymous: false, inputs: [{ indexed: true, internalType: 'address', name: 'user', type: 'address' }, { indexed: false, internalType: 'string', name: 'action', type: 'string' }, { indexed: false, internalType: 'uint256', name: 'dotAmount', type: 'uint256' }, { indexed: false, internalType: 'bool', name: 'live', type: 'bool' }], name: 'XcmDispatched', type: 'event' },
+  { anonymous: false, inputs: [{ indexed: true, internalType: 'address', name: 'user', type: 'address' }, { indexed: false, internalType: 'string', name: 'action', type: 'string' }, { indexed: false, internalType: 'uint256', name: 'dotAmount', type: 'uint256' }, { indexed: false, internalType: 'bytes', name: 'dest', type: 'bytes' }, { indexed: false, internalType: 'bytes', name: 'message', type: 'bytes' }], name: 'XcmMessagePrepared', type: 'event' },
   { inputs: [], name: 'BIFROST_PARA_ID', outputs: [{ internalType: 'uint32', name: '', type: 'uint32' }], stateMutability: 'view', type: 'function' },
   { inputs: [], name: 'BPS', outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }], stateMutability: 'view', type: 'function' },
   { inputs: [], name: 'INITIAL_SHARE_PRICE', outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }], stateMutability: 'view', type: 'function' },
@@ -98,6 +115,7 @@ export const VAULT_ABI = [
   { inputs: [], name: 'dotCurrencyId', outputs: [{ internalType: 'bytes2', name: '', type: 'bytes2' }], stateMutability: 'view', type: 'function' },
   { inputs: [], name: 'dotDecimals', outputs: [{ internalType: 'uint8', name: '', type: 'uint8' }], stateMutability: 'view', type: 'function' },
   { inputs: [], name: 'dotToken', outputs: [{ internalType: 'address', name: '', type: 'address' }], stateMutability: 'view', type: 'function' },
+  { inputs: [], name: 'externalXcmExecutorMode', outputs: [{ internalType: 'bool', name: '', type: 'bool' }], stateMutability: 'view', type: 'function' },
   { inputs: [{ internalType: 'address', name: 'user', type: 'address' }], name: 'getEstimatedYield', outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }], stateMutability: 'view', type: 'function' },
   { inputs: [{ internalType: 'address', name: 'user', type: 'address' }], name: 'getUserInfo', outputs: [{ internalType: 'uint256', name: '_shares', type: 'uint256' }, { internalType: 'uint256', name: '_dotValue', type: 'uint256' }, { internalType: 'uint256', name: '_estimatedYield', type: 'uint256' }, { internalType: 'uint256', name: '_depositedAt', type: 'uint256' }, { internalType: 'uint256', name: '_pendingWithdrawal', type: 'uint256' }], stateMutability: 'view', type: 'function' },
   { inputs: [{ internalType: 'address', name: 'user', type: 'address' }], name: 'getUserPositionDot', outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }], stateMutability: 'view', type: 'function' },
@@ -113,6 +131,7 @@ export const VAULT_ABI = [
   { inputs: [], name: 'remark', outputs: [{ internalType: 'string', name: '', type: 'string' }], stateMutability: 'view', type: 'function' },
   { inputs: [], name: 'renounceOwnership', outputs: [], stateMutability: 'nonpayable', type: 'function' },
   { inputs: [{ internalType: 'address', name: 'to', type: 'address' }, { internalType: 'uint256', name: 'amount', type: 'uint256' }], name: 'rescueDot', outputs: [], stateMutability: 'nonpayable', type: 'function' },
+  { inputs: [{ internalType: 'bool', name: '_enabled', type: 'bool' }], name: 'setExternalXcmExecutorMode', outputs: [], stateMutability: 'nonpayable', type: 'function' },
   { inputs: [{ internalType: 'bool', name: '_paused', type: 'bool' }], name: 'setPaused', outputs: [], stateMutability: 'nonpayable', type: 'function' },
   { inputs: [{ internalType: 'bytes32', name: '_hubSovereign', type: 'bytes32' }], name: 'setHubSovereign', outputs: [], stateMutability: 'nonpayable', type: 'function' },
   { inputs: [{ internalType: 'bytes2', name: '_dotCurrencyId', type: 'bytes2' }, { internalType: 'bytes2', name: '_vDotCurrencyId', type: 'bytes2' }, { internalType: 'bytes1', name: '_destChainIndexRaw', type: 'bytes1' }, { internalType: 'string', name: '_remark', type: 'string' }, { internalType: 'uint32', name: '_channelId', type: 'uint32' }, { internalType: 'bool', name: '_enabled', type: 'bool' }], name: 'setXcmConfig', outputs: [], stateMutability: 'nonpayable', type: 'function' },

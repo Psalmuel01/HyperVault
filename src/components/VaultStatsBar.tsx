@@ -3,6 +3,7 @@ import { VaultState, UserPosition } from '@/hooks/use-vault';
 interface VaultStatsBarProps {
   vaultState: VaultState;
   userPosition: UserPosition;
+  tokenSymbol: string;
 }
 
 const StatItem = ({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) => (
@@ -12,15 +13,15 @@ const StatItem = ({ label, value, accent = false }: { label: string; value: stri
   </div>
 );
 
-const VaultStatsBar = ({ vaultState, userPosition }: VaultStatsBarProps) => {
+const VaultStatsBar = ({ vaultState, userPosition, tokenSymbol }: VaultStatsBarProps) => {
   return (
     <div className="bg-card border border-border rounded-lg p-5">
       <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
-        <StatItem label="Total Value Locked" value={`${vaultState.totalDOT.toLocaleString(undefined, { maximumFractionDigits: 1 })} DOT`} />
-        <StatItem label="Share Price" value={`${vaultState.sharePrice.toFixed(4)} DOT`} />
+        <StatItem label="Total Value Locked" value={`${vaultState.totalDOT.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${tokenSymbol}`} />
+        <StatItem label="Share Price" value={`${vaultState.sharePrice.toFixed(4)} ${tokenSymbol}`} />
         <StatItem label="APY" value={`${vaultState.apy}%`} accent />
         <StatItem label="Depositors" value={vaultState.userCount.toString()} />
-        <StatItem label="Your Position" value={userPosition.dotValue > 0 ? `${userPosition.dotValue.toFixed(2)} DOT` : '—'} />
+        <StatItem label="Your Position" value={userPosition.dotValue > 0 ? `${userPosition.dotValue.toFixed(2)} ${tokenSymbol}` : '—'} />
       </div>
     </div>
   );

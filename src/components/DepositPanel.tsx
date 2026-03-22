@@ -5,10 +5,11 @@ interface DepositPanelProps {
   dotBalance: number;
   sharePrice: number;
   totalShares: number;
+  tokenSymbol: string;
   onDeposit: (amount: number) => void;
 }
 
-const DepositPanel = ({ dotBalance, sharePrice, totalShares, onDeposit }: DepositPanelProps) => {
+const DepositPanel = ({ dotBalance, sharePrice, totalShares, tokenSymbol, onDeposit }: DepositPanelProps) => {
   const [amount, setAmount] = useState('');
   const numAmount = parseFloat(amount) || 0;
   const sharesReceived = numAmount / sharePrice;
@@ -25,7 +26,7 @@ const DepositPanel = ({ dotBalance, sharePrice, totalShares, onDeposit }: Deposi
     <div className="bg-card border border-border rounded-lg p-5 space-y-5">
       <div className="flex items-center justify-between">
         <h3 className="font-display text-lg text-foreground">Deposit</h3>
-        <span className="text-xs font-mono text-muted-foreground">Balance: {dotBalance.toFixed(2)} DOT</span>
+        <span className="text-xs font-mono text-muted-foreground">Balance: {dotBalance.toFixed(2)} {tokenSymbol}</span>
       </div>
 
       <div className="relative">
@@ -56,7 +57,7 @@ const DepositPanel = ({ dotBalance, sharePrice, totalShares, onDeposit }: Deposi
           </div>
           <div className="flex justify-between text-muted-foreground">
             <span>Rate</span>
-            <span className="text-foreground">1 share = {sharePrice.toFixed(4)} DOT</span>
+            <span className="text-foreground">1 share = {sharePrice.toFixed(4)} {tokenSymbol}</span>
           </div>
         </div>
       )}
@@ -67,7 +68,7 @@ const DepositPanel = ({ dotBalance, sharePrice, totalShares, onDeposit }: Deposi
         disabled={numAmount <= 0 || numAmount > dotBalance}
         onClick={handleDeposit}
       >
-        {numAmount > dotBalance ? 'Insufficient Balance' : 'Deposit DOT'}
+        {numAmount > dotBalance ? 'Insufficient Balance' : `Deposit ${tokenSymbol}`}
       </Button>
     </div>
   );

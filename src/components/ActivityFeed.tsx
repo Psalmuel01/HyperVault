@@ -2,6 +2,7 @@ import { Transaction } from '@/hooks/use-vault';
 
 interface ActivityFeedProps {
   transactions: Transaction[];
+  tokenSymbol: string;
 }
 
 const typeLabels: Record<string, { label: string; color: string }> = {
@@ -9,6 +10,7 @@ const typeLabels: Record<string, { label: string; color: string }> = {
   withdraw: { label: 'WITHDRAW', color: 'text-primary' },
   claim: { label: 'CLAIM', color: 'text-accent' },
   xcm_dispatch: { label: 'XCM', color: 'text-secondary' },
+  xcm_relay: { label: 'RELAY', color: 'text-secondary' },
   yield_accrual: { label: 'YIELD', color: 'text-accent' },
 };
 
@@ -18,7 +20,7 @@ const statusDots: Record<string, string> = {
   dispatched: 'bg-secondary animate-pulse',
 };
 
-const ActivityFeed = ({ transactions }: ActivityFeedProps) => {
+const ActivityFeed = ({ transactions, tokenSymbol }: ActivityFeedProps) => {
   const recent = transactions.slice(0, 6);
 
   return (
@@ -41,7 +43,7 @@ const ActivityFeed = ({ transactions }: ActivityFeedProps) => {
                 <span className="text-xs font-mono text-muted-foreground">{tx.user}</span>
               </div>
               <div className="flex items-center gap-3">
-                <span className="text-xs font-mono text-foreground">{tx.amount.toFixed(2)} DOT</span>
+                <span className="text-xs font-mono text-foreground">{tx.amount.toFixed(2)} {tokenSymbol}</span>
                 <span className="text-[10px] font-mono text-muted-foreground/60">{timeStr}</span>
               </div>
             </div>

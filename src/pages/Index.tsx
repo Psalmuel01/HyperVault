@@ -14,7 +14,7 @@ const Index = () => {
   if (!vault.connected) {
     return (
       <ConnectWallet
-        vaultStats={{ apy: vault.vaultState.apy, totalDOT: vault.vaultState.totalDOT }}
+        vaultStats={{ apy: vault.vaultState.apy, totalDOT: vault.vaultState.totalDOT, tokenSymbol: vault.tokenSymbol }}
       />
     );
   }
@@ -30,7 +30,7 @@ const Index = () => {
         <HyperVaultLogo />
         <div className="flex items-center gap-4">
           <div className="text-right mr-2">
-            <p className="text-xs font-mono text-accent">{vault.dotBalance.toFixed(2)} DOT</p>
+            <p className="text-xs font-mono text-accent">{vault.dotBalance.toFixed(2)} {vault.tokenSymbol}</p>
           </div>
           {/* RainbowKit provides the address, chain, and disconnect in one component */}
           <ConnectButton
@@ -48,17 +48,25 @@ const Index = () => {
           <div className={`w-1.5 h-1.5 rounded-full ${vault.vaultState.xcmEnabled ? 'bg-accent' : 'bg-secondary'} animate-pulse`} />
           <span>
             {vault.vaultState.xcmEnabled
-              ? 'XCM dispatch live — Bifrost parachain connected'
+              ? (
+                vault.vaultState.externalXcmExecutorMode
+                  ? 'Live mode: external relayer (wallet submits prepared XCM)'
+                  : 'Live mode: in-contract XCM dispatch'
+              )
               : 'XCM dispatch disabled — configure live mode before production deposits'}
           </span>
           <span className="ml-auto">
             {vault.vaultState.xcmEnabled
-              ? 'Live mode: vDOT staking via XCM'
+              ? (
+                vault.autoRelayXcm
+                  ? 'Auto-relay: ON'
+                  : 'Auto-relay: OFF'
+              )
               : 'Fallback mode: simulated vDOT APY'}
           </span>
         </div>
 
-        <VaultStatsBar vaultState={vault.vaultState} userPosition={vault.userPosition} />
+        <VaultStatsBar vaultState={vault.vaultState} userPosition={vault.userPosition} tokenSymbol={vault.tokenSymbol} />
 
         <div className="grid md:grid-cols-2 gap-6">
           <div className="space-y-6">
@@ -66,16 +74,18 @@ const Index = () => {
               dotBalance={vault.dotBalance}
               sharePrice={vault.vaultState.sharePrice}
               totalShares={vault.vaultState.totalShares}
+              tokenSymbol={vault.tokenSymbol}
               onDeposit={vault.deposit}
             />
             <PositionPanel
               position={vault.userPosition}
               sharePrice={vault.vaultState.sharePrice}
+              tokenSymbol={vault.tokenSymbol}
               onWithdraw={vault.withdraw}
               onClaimWithdrawal={vault.claimWithdrawal}
             />
           </div>
-          <ActivityFeed transactions={vault.transactions} />
+          <ActivityFeed transactions={vault.transactions} tokenSymbol={vault.tokenSymbol} />
         </div>
       </main>
 
@@ -83,7 +93,7 @@ const Index = () => {
       <footer className="border-t border-border px-6 py-4 mt-12">
         <div className="max-w-6xl mx-auto flex items-center justify-between text-[10px] font-mono text-muted-foreground/40 tracking-widest uppercase">
           <span>HyperVault · Polkadot Hub EVM</span>
-          <span>Bifrost vDOT · ~{vault.vaultState.apy}% APY</span>
+          <span>{vault.tokenSymbol} ↔ vDOT · ~{vault.vaultState.apy}% APY</span>
           <span>Hackathon Build · March 2026</span>
         </div>
       </footer>

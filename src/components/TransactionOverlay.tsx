@@ -27,7 +27,7 @@ const TransactionOverlay = ({ type, hash }: TransactionOverlayProps) => {
         <div className="space-y-2">
           <p className="text-sm font-mono text-foreground">{type}</p>
           <p className="text-xs font-mono text-primary animate-pulse">
-            XCM message dispatched to Bifrost...
+            Waiting for wallet + chain confirmation...
           </p>
         </div>
 

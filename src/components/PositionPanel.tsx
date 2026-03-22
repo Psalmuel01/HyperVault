@@ -5,11 +5,12 @@ import { UserPosition } from '@/hooks/use-vault';
 interface PositionPanelProps {
   position: UserPosition;
   sharePrice: number;
+  tokenSymbol: string;
   onWithdraw: (shares: number) => void;
   onClaimWithdrawal: () => void;
 }
 
-const PositionPanel = ({ position, sharePrice, onWithdraw, onClaimWithdrawal }: PositionPanelProps) => {
+const PositionPanel = ({ position, sharePrice, tokenSymbol, onWithdraw, onClaimWithdrawal }: PositionPanelProps) => {
   const [withdrawMode, setWithdrawMode] = useState(false);
   const [shareAmount, setShareAmount] = useState('');
   const numShares = parseFloat(shareAmount) || 0;
@@ -34,7 +35,7 @@ const PositionPanel = ({ position, sharePrice, onWithdraw, onClaimWithdrawal }: 
           </svg>
         </div>
         <p className="text-sm font-mono text-muted-foreground">No active position</p>
-        <p className="text-xs font-mono text-muted-foreground/60 mt-1">Deposit DOT to start earning yield</p>
+        <p className="text-xs font-mono text-muted-foreground/60 mt-1">Deposit {tokenSymbol} to start earning yield</p>
       </div>
     );
   }
@@ -51,10 +52,10 @@ const PositionPanel = ({ position, sharePrice, onWithdraw, onClaimWithdrawal }: 
         <div className="bg-muted rounded-md p-3 space-y-2">
           <p className="text-[10px] font-mono text-muted-foreground tracking-widest uppercase">Pending Withdrawal</p>
           <p className="text-sm font-mono text-foreground">
-            {position.pendingWithdrawal.toFixed(4)} DOT is ready once redeem settles.
+            {position.pendingWithdrawal.toFixed(4)} {tokenSymbol} is ready once redeem settles.
           </p>
           <Button variant="vault" className="w-full py-4" onClick={onClaimWithdrawal}>
-            Claim Redeemed DOT
+            {`Claim Redeemed ${tokenSymbol}`}
           </Button>
         </div>
       )}
@@ -71,7 +72,7 @@ const PositionPanel = ({ position, sharePrice, onWithdraw, onClaimWithdrawal }: 
         <div className="bg-muted rounded-md p-3">
           <span className="text-[10px] font-mono text-muted-foreground tracking-widest uppercase block mb-1">Yield Earned</span>
           <span className="text-base font-mono font-semibold text-accent">
-            +{position.yieldEarned.toFixed(4)} DOT
+            +{position.yieldEarned.toFixed(4)} {tokenSymbol}
           </span>
         </div>
         <div className="bg-muted rounded-md p-3">
@@ -108,7 +109,8 @@ const PositionPanel = ({ position, sharePrice, onWithdraw, onClaimWithdrawal }: 
           </div>
           {numShares > 0 && (
             <p className="text-xs font-mono text-muted-foreground">
-              You'll receive ≈ <span className="text-accent">{dotOut.toFixed(4)} DOT</span>
+              {`You'll receive ≈ `}
+              <span className="text-accent">{dotOut.toFixed(4)} {tokenSymbol}</span>
             </p>
           )}
           <div className="flex gap-2">

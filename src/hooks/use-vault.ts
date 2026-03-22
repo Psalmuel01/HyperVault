@@ -1,8 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useAccount, useBalance, useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi';
-import { formatUnits, parseUnits, type Address, type Log } from 'viem';
+import { useAccount, useBalance, useReadContract, useWriteContract, usePublicClient, useWalletClient } from 'wagmi';
+import { decodeEventLog, encodeFunctionData, formatUnits, parseUnits, type Address, type Log as ViemLog } from 'viem';
 import { toast } from '@/components/ui/sonner';
-import { VAULT_ABI, ERC20_ABI, VAULT_ADDRESS, DOT_TOKEN_ADDRESS, DOT_DECIMALS, USE_NATIVE_DOT } from '@/lib/contract';
+import {
+  VAULT_ABI,
+  ERC20_ABI,
+  XCM_PRECOMPILE_ABI,
+  XCM_PRECOMPILE,
+  VAULT_ADDRESS,
+  DOT_TOKEN_ADDRESS,
+  DOT_DECIMALS,
+  USE_NATIVE_DOT,
+  AUTO_RELAY_XCM,
+} from '@/lib/contract';
 
 // ─────────────────────────────────────────────────────────────
 //  Types exported to components
@@ -24,12 +34,14 @@ export interface VaultState {
   apy: number;
   userCount: number;
   xcmEnabled: boolean;
+  externalXcmExecutorMode: boolean;
+  nativeDotMode: boolean;
   paused: boolean;
 }
 
 export interface Transaction {
   id: string;
-  type: 'deposit' | 'withdraw' | 'claim' | 'xcm_dispatch' | 'yield_accrual';
+  type: 'deposit' | 'withdraw' | 'claim' | 'xcm_dispatch' | 'xcm_relay' | 'yield_accrual';
   user: string;
   amount: number;
   shares?: number;
@@ -94,11 +106,11 @@ const fmtSharePrice = (raw: bigint | undefined): number => {
 export function useVault() {
   const { address, isConnected } = useAccount();
   const publicClient = usePublicClient();
+  const { data: walletClient } = useWalletClient();
   const contractReady = isContractConfigured();
 
   // ── Pending transaction tracking ───────────────────────────
   const [pendingTx, setPendingTx] = useState<{ type: string; hash: string } | null>(null);
-  const [pendingTxHash, setPendingTxHash] = useState<`0x${string}` | undefined>();
   const [transactions, setTransactions] = useState<Transaction[]>(MOCK_TRANSACTIONS);
 
   // ── Mock fallback state (when no contract) ─────────────────
@@ -110,6 +122,8 @@ export function useVault() {
     apy: MOCK_APY,
     userCount: 47,
     xcmEnabled: false,
+    externalXcmExecutorMode: false,
+    nativeDotMode: true,
     paused: false,
   });
   const [mockUserPosition, setMockUserPosition] = useState<UserPosition>({
@@ -137,6 +151,14 @@ export function useVault() {
   });
 
   const nativeDotMode = Boolean(nativeModeRaw ?? USE_NATIVE_DOT);
+
+  const { data: externalXcmModeRaw } = useReadContract({
+    address: VAULT_ADDRESS,
+    abi: VAULT_ABI,
+    functionName: 'externalXcmExecutorMode',
+    query: { enabled: contractReady && isConnected },
+  });
+  const externalXcmExecutorMode = Boolean(externalXcmModeRaw ?? false);
 
   const { data: vaultDotDecimalsRaw } = useReadContract({
     address: VAULT_ADDRESS,
@@ -182,25 +204,6 @@ export function useVault() {
   // ── Contract writes ────────────────────────────────────────
   const { writeContractAsync } = useWriteContract();
 
-  // ── Wait for pending tx confirmation ───────────────────────
-  const { isSuccess: txConfirmed } = useWaitForTransactionReceipt({
-    hash: pendingTxHash,
-  });
-
-  // Clear pending state on tx confirmation
-  useEffect(() => {
-    if (txConfirmed && pendingTxHash) {
-      setPendingTx(null);
-      setPendingTxHash(undefined);
-      // Refresh all data
-      refetchVaultState();
-      refetchUserInfo();
-      refetchDotBalance();
-      refetchNativeBalance();
-      toast.success('Transaction confirmed!');
-    }
-  }, [txConfirmed, pendingTxHash, refetchVaultState, refetchUserInfo, refetchDotBalance, refetchNativeBalance]);
-
   // ── Derived: vault state ───────────────────────────────────
   const vaultState: VaultState = useMemo(() => {
     if (!contractReady || !vaultStateRaw) return mockVaultState;
@@ -215,9 +218,11 @@ export function useVault() {
       apy: MOCK_APY, // APY is always mocked (Bifrost doesn't expose it on-chain)
       userCount: Number(depositorCount),
       xcmEnabled: xcmEnabled,
+      externalXcmExecutorMode,
+      nativeDotMode,
       paused: paused,
     };
-  }, [contractReady, vaultStateRaw, mockVaultState, dotDecimalsRaw, vaultDotDecimalsRaw]);
+  }, [contractReady, vaultStateRaw, mockVaultState, dotDecimalsRaw, vaultDotDecimalsRaw, externalXcmExecutorMode, nativeDotMode]);
 
   // ── Derived: user position ─────────────────────────────────
   const userPosition: UserPosition = useMemo(() => {
@@ -311,7 +316,7 @@ export function useVault() {
         const parsed: Transaction[] = [];
 
         for (const log of depositLogs) {
-          const args = (log as Log & { args: { user: Address; dotAmount: bigint; sharesIssued: bigint } }).args;
+          const args = (log as ViemLog & { args: { user: Address; dotAmount: bigint; sharesIssued: bigint } }).args;
           const tokenDecimals = Number(vaultDotDecimalsRaw ?? dotDecimalsRaw ?? DOT_DECIMALS);
           parsed.push({
             id: `${log.transactionHash}-${log.logIndex}`,
@@ -326,7 +331,7 @@ export function useVault() {
         }
 
         for (const log of withdrawLogs) {
-          const args = (log as Log & { args: { user: Address; sharesBurned: bigint; dotEstimate: bigint } }).args;
+          const args = (log as ViemLog & { args: { user: Address; sharesBurned: bigint; dotEstimate: bigint } }).args;
           const tokenDecimals = Number(vaultDotDecimalsRaw ?? dotDecimalsRaw ?? DOT_DECIMALS);
           parsed.push({
             id: `${log.transactionHash}-${log.logIndex}`,
@@ -341,7 +346,7 @@ export function useVault() {
         }
 
         for (const log of xcmLogs) {
-          const args = (log as Log & { args: { user: Address; action: string; dotAmount: bigint; live: boolean } }).args;
+          const args = (log as ViemLog & { args: { user: Address; action: string; dotAmount: bigint; live: boolean } }).args;
           const tokenDecimals = Number(vaultDotDecimalsRaw ?? dotDecimalsRaw ?? DOT_DECIMALS);
           parsed.push({
             id: `${log.transactionHash}-${log.logIndex}`,
@@ -371,6 +376,60 @@ export function useVault() {
     return () => clearInterval(interval);
   }, [contractReady, publicClient, isConnected, dotDecimalsRaw, vaultDotDecimalsRaw]);
 
+  const waitAndRefresh = useCallback(async (hash: `0x${string}`) => {
+    if (!publicClient) return;
+    await publicClient.waitForTransactionReceipt({ hash });
+    await Promise.all([
+      refetchVaultState(),
+      refetchUserInfo(),
+      refetchDotBalance(),
+      refetchNativeBalance(),
+    ]);
+  }, [publicClient, refetchVaultState, refetchUserInfo, refetchDotBalance, refetchNativeBalance]);
+
+  const extractPreparedXcm = useCallback((logs: readonly ViemLog[]) => {
+    for (const log of logs) {
+      if (!log.address || log.address.toLowerCase() !== VAULT_ADDRESS.toLowerCase()) continue;
+      try {
+        const decoded = decodeEventLog({
+          abi: VAULT_ABI,
+          data: log.data,
+          topics: log.topics,
+        });
+        if (decoded.eventName !== 'XcmMessagePrepared') continue;
+        const args = decoded.args as {
+          user: Address;
+          action: string;
+          dotAmount: bigint;
+          dest: `0x${string}`;
+          message: `0x${string}`;
+        };
+        return args;
+      } catch {
+        // ignore unrelated logs
+      }
+    }
+    return null;
+  }, []);
+
+  const relayPreparedXcm = useCallback(async (dest: `0x${string}`, message: `0x${string}`) => {
+    if (!walletClient || !publicClient || !address) {
+      throw new Error('Wallet client not ready for XCM relay.');
+    }
+    const relayHash = await walletClient.sendTransaction({
+      account: address,
+      to: XCM_PRECOMPILE,
+      data: encodeFunctionData({
+        abi: XCM_PRECOMPILE_ABI,
+        functionName: 'send',
+        args: [dest, message],
+      }),
+      gas: 2_000_000n,
+    });
+    await waitAndRefresh(relayHash);
+    return relayHash;
+  }, [walletClient, publicClient, address, waitAndRefresh]);
+
   // ─────────────────────────────────────────────────────────────
   //  Actions
   // ─────────────────────────────────────────────────────────────
@@ -379,14 +438,15 @@ export function useVault() {
     if (amount <= 0 || amount > dotBalance) return;
 
     // ── Contract mode ───────────────────────────────────────
-    if (contractReady && address) {
+    if (contractReady && address && publicClient) {
       try {
         const tokenDecimals = Number(vaultDotDecimalsRaw ?? dotDecimalsRaw ?? DOT_DECIMALS);
         const rawAmount = parseUnits(amount.toString(), tokenDecimals);
+        const short = shortenAddress(address);
 
         let depositHash: `0x${string}`;
         if (nativeDotMode) {
-          setPendingTx({ type: 'Depositing canonical PAS/DOT & dispatching XCM to Bifrost', hash: '' });
+          setPendingTx({ type: `Depositing ${nativeDotMode ? 'PAS' : 'DOT'}`, hash: '' });
           depositHash = await writeContractAsync({
             address: VAULT_ADDRESS,
             abi: VAULT_ABI,
@@ -396,7 +456,7 @@ export function useVault() {
           });
         } else {
           // Step 1: Approve DOT spending
-          setPendingTx({ type: 'Approving DOT...', hash: '' });
+          setPendingTx({ type: 'Approving token spend...', hash: '' });
 
           const approveHash = await writeContractAsync({
             address: DOT_TOKEN_ADDRESS,
@@ -406,13 +466,10 @@ export function useVault() {
           });
 
           toast.info('Approval submitted, waiting for confirmation...');
-
-          if (publicClient) {
-            await publicClient.waitForTransactionReceipt({ hash: approveHash });
-          }
+          await waitAndRefresh(approveHash);
 
           // Step 2: Deposit
-          setPendingTx({ type: 'Depositing DOT & dispatching XCM to Bifrost', hash: approveHash });
+          setPendingTx({ type: 'Depositing token into HyperVault...', hash: approveHash });
           depositHash = await writeContractAsync({
             address: VAULT_ADDRESS,
             abi: VAULT_ABI,
@@ -421,19 +478,48 @@ export function useVault() {
           });
         }
 
-        setPendingTx({ type: 'Depositing DOT & dispatching XCM to Bifrost', hash: depositHash });
-        setPendingTxHash(depositHash);
+        setPendingTx({ type: 'Confirming deposit...', hash: depositHash });
 
-        // Add to transactions immediately as pending
-        const short = shortenAddress(address);
         setTransactions(prev => [
           { id: Date.now().toString(), type: 'deposit', user: short, amount, timestamp: Date.now(), status: 'pending', txHash: depositHash },
           ...prev,
         ]);
 
+        const depositReceipt = await publicClient.waitForTransactionReceipt({ hash: depositHash });
+        await waitAndRefresh(depositHash);
+
+        const prepared = extractPreparedXcm(depositReceipt.logs);
+        const tokenLabel = nativeDotMode ? 'PAS' : 'DOT';
+
+        if (externalXcmExecutorMode) {
+          if (prepared && AUTO_RELAY_XCM) {
+            setPendingTx({ type: 'Relaying XCM to Bifrost...', hash: '' });
+            const relayHash = await relayPreparedXcm(prepared.dest, prepared.message);
+            setTransactions(prev => [
+              {
+                id: `${Date.now()}-relay`,
+                type: 'xcm_relay',
+                user: short,
+                amount,
+                timestamp: Date.now(),
+                status: 'dispatched',
+                txHash: relayHash,
+              },
+              ...prev,
+            ]);
+            toast.success(`Deposit confirmed and XCM relayed for ${amount} ${tokenLabel}.`);
+          } else if (prepared) {
+            toast.warning('Deposit confirmed. XCM message prepared but auto-relay is disabled.');
+          } else {
+            toast.warning('Deposit confirmed, but no prepared XCM message was found in logs.');
+          }
+        } else {
+          toast.success(`Deposit confirmed and XCM dispatched by contract for ${amount} ${tokenLabel}.`);
+        }
+
+        setPendingTx(null);
       } catch (err: unknown) {
         setPendingTx(null);
-        setPendingTxHash(undefined);
         const msg = err instanceof Error ? err.message : 'Transaction failed';
         if (msg.includes('User rejected') || msg.includes('user rejected')) {
           toast.error('Transaction rejected by user.');
@@ -478,17 +564,34 @@ export function useVault() {
 
       setPendingTx(null);
     }, 2500);
-  }, [dotBalance, contractReady, address, writeContractAsync, publicClient, mockVaultState, mockUserPosition, dotDecimalsRaw, nativeDotMode, vaultDotDecimalsRaw]);
+  }, [
+    dotBalance,
+    contractReady,
+    address,
+    publicClient,
+    writeContractAsync,
+    mockVaultState,
+    mockUserPosition,
+    dotDecimalsRaw,
+    nativeDotMode,
+    vaultDotDecimalsRaw,
+    extractPreparedXcm,
+    externalXcmExecutorMode,
+    relayPreparedXcm,
+    waitAndRefresh,
+  ]);
 
   const withdraw = useCallback(async (shareAmount: number) => {
     if (shareAmount <= 0 || shareAmount > userPosition.shares) return;
 
     // ── Contract mode ───────────────────────────────────────
-    if (contractReady && address) {
+    if (contractReady && address && publicClient) {
       try {
         const rawShares = parseUnits(shareAmount.toString(), 18);
+        const short = shortenAddress(address);
+        const amountEstimate = shareAmount * vaultState.sharePrice;
 
-        setPendingTx({ type: 'Redeeming vDOT via XCM from Bifrost', hash: '' });
+        setPendingTx({ type: 'Submitting withdrawal request...', hash: '' });
 
         const withdrawHash = await writeContractAsync({
           address: VAULT_ADDRESS,
@@ -497,18 +600,46 @@ export function useVault() {
           args: [rawShares],
         });
 
-        setPendingTx({ type: 'Redeeming vDOT via XCM from Bifrost', hash: withdrawHash });
-        setPendingTxHash(withdrawHash);
+        setPendingTx({ type: 'Confirming withdrawal...', hash: withdrawHash });
 
-        const short = shortenAddress(address);
         setTransactions(prev => [
-          { id: Date.now().toString(), type: 'withdraw', user: short, amount: shareAmount * vaultState.sharePrice, shares: shareAmount, timestamp: Date.now(), status: 'pending', txHash: withdrawHash },
+          { id: Date.now().toString(), type: 'withdraw', user: short, amount: amountEstimate, shares: shareAmount, timestamp: Date.now(), status: 'pending', txHash: withdrawHash },
           ...prev,
         ]);
 
+        const withdrawReceipt = await publicClient.waitForTransactionReceipt({ hash: withdrawHash });
+        await waitAndRefresh(withdrawHash);
+
+        if (externalXcmExecutorMode) {
+          const prepared = extractPreparedXcm(withdrawReceipt.logs);
+          if (prepared && AUTO_RELAY_XCM) {
+            setPendingTx({ type: 'Relaying redeem XCM from wallet...', hash: '' });
+            const relayHash = await relayPreparedXcm(prepared.dest, prepared.message);
+            setTransactions(prev => [
+              {
+                id: `${Date.now()}-xcm-relay`,
+                type: 'xcm_relay',
+                user: short,
+                amount: amountEstimate,
+                timestamp: Date.now(),
+                status: 'dispatched',
+                txHash: relayHash,
+              },
+              ...prev,
+            ]);
+            toast.success('Withdrawal requested and redeem XCM relayed.');
+          } else if (prepared) {
+            toast.warning('Withdrawal requested. XCM message prepared but auto-relay is disabled.');
+          } else {
+            toast.warning('Withdrawal requested, but no prepared XCM message was found in logs.');
+          }
+        } else {
+          toast.success('Withdrawal request confirmed and redeem XCM dispatched by contract.');
+        }
+
+        setPendingTx(null);
       } catch (err: unknown) {
         setPendingTx(null);
-        setPendingTxHash(undefined);
         const msg = err instanceof Error ? err.message : 'Transaction failed';
         if (msg.includes('User rejected') || msg.includes('user rejected')) {
           toast.error('Transaction rejected by user.');
@@ -552,12 +683,25 @@ export function useVault() {
 
       setPendingTx(null);
     }, 3000);
-  }, [userPosition, vaultState.sharePrice, contractReady, address, writeContractAsync, mockVaultState, mockUserPosition]);
+  }, [
+    userPosition,
+    vaultState.sharePrice,
+    contractReady,
+    address,
+    publicClient,
+    writeContractAsync,
+    mockVaultState,
+    mockUserPosition,
+    externalXcmExecutorMode,
+    extractPreparedXcm,
+    relayPreparedXcm,
+    waitAndRefresh,
+  ]);
 
   const claimWithdrawal = useCallback(async () => {
     if (userPosition.pendingWithdrawal <= 0) return;
 
-    if (contractReady && address) {
+    if (contractReady && address && publicClient) {
       try {
         setPendingTx({ type: 'Claiming redeemed DOT', hash: '' });
 
@@ -569,7 +713,6 @@ export function useVault() {
         });
 
         setPendingTx({ type: 'Claiming redeemed DOT', hash: claimHash });
-        setPendingTxHash(claimHash);
 
         const short = shortenAddress(address);
         setTransactions(prev => [
@@ -584,9 +727,11 @@ export function useVault() {
           },
           ...prev,
         ]);
+        await waitAndRefresh(claimHash);
+        setPendingTx(null);
+        toast.success('Claim confirmed.');
       } catch (err: unknown) {
         setPendingTx(null);
-        setPendingTxHash(undefined);
         const msg = err instanceof Error ? err.message : 'Transaction failed';
         if (msg.includes('User rejected') || msg.includes('user rejected')) {
           toast.error('Transaction rejected by user.');
@@ -600,11 +745,15 @@ export function useVault() {
     // Mock mode: clear pending balance immediately.
     setMockDotBalance(prev => prev + mockUserPosition.pendingWithdrawal);
     setMockUserPosition(prev => ({ ...prev, pendingWithdrawal: 0 }));
-  }, [userPosition.pendingWithdrawal, contractReady, address, writeContractAsync, mockUserPosition.pendingWithdrawal]);
+  }, [userPosition.pendingWithdrawal, contractReady, address, publicClient, writeContractAsync, mockUserPosition.pendingWithdrawal, waitAndRefresh]);
 
   return {
     connected: isConnected,
     walletAddress: address ?? '',
+    tokenSymbol: nativeDotMode ? 'PAS' : 'DOT',
+    nativeDotMode,
+    externalXcmExecutorMode,
+    autoRelayXcm: AUTO_RELAY_XCM,
     dotBalance,
     vaultState,
     userPosition,

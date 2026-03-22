@@ -3,7 +3,7 @@ import HyperVaultLogo from '@/components/HyperVaultLogo';
 
 interface ConnectWalletProps {
   onConnect?: () => void;
-  vaultStats: { apy: number; totalDOT: number };
+  vaultStats: { apy: number; totalDOT: number; tokenSymbol: string };
 }
 
 const ConnectWallet = ({ vaultStats }: ConnectWalletProps) => {
@@ -26,12 +26,12 @@ const ConnectWallet = ({ vaultStats }: ConnectWalletProps) => {
 
         <div className="text-center space-y-3">
           <h2 className="font-display text-4xl md:text-5xl text-foreground leading-tight">
-            Native DOT Yield.
+            Native {vaultStats.tokenSymbol} Yield.
             <br />
             <span className="text-gradient">No Bridges.</span>
           </h2>
           <p className="font-mono text-sm text-muted-foreground max-w-md">
-            Deposit DOT → Earn ~{vaultStats.apy}% APY via Bifrost vDOT → Withdraw DOT + yield. One contract, one ecosystem.
+            Deposit {vaultStats.tokenSymbol} → Earn ~{vaultStats.apy}% APY via Bifrost vDOT → Withdraw {vaultStats.tokenSymbol} + yield.
           </p>
         </div>
 
@@ -63,7 +63,7 @@ const ConnectWallet = ({ vaultStats }: ConnectWalletProps) => {
             <span>APY: ~{vaultStats.apy}%</span>
           </div>
           <div className="h-3 w-px bg-border" />
-          <span>TVL: {vaultStats.totalDOT.toLocaleString()} DOT</span>
+          <span>TVL: {vaultStats.totalDOT.toLocaleString()} {vaultStats.tokenSymbol}</span>
           <div className="h-3 w-px bg-border" />
           <span>Powered by Bifrost</span>
         </div>
