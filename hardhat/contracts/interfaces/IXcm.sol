@@ -13,15 +13,15 @@ pragma solidity ^0.8.20;
  * @dev Represents an XCM VersionedLocation (previously MultiLocation).
  *      For Bifrost: parents=1, interior encodes X1(Parachain(2030)).
  *
- *      SCALE-encoded bytes for Bifrost destination:
+ *      SCALE-encoded bytes for Bifrost destination (V5):
  *        parents  = 0x01
- *        interior = X1 tag (0x01) + Parachain tag (0x00) + paraId LE u32
- *        paraId 2030 = 0xEE070000
- *        Full: 0x010100EE070000
+ *        interior = X1 tag (0x01) + Parachain tag (0x00) + compact<u32>(2030)
+ *        compact<u32>(2030) = 0xB91F
+ *        Full: 0x010100B91F
  *
- *      Wrapped as VersionedMultiLocation V3:
- *        0x03 (V3) + 0x010100EE070000
- *        = 0x03010100EE070000
+ *      Wrapped as VersionedLocation V5:
+ *        0x05 (V5) + 0x010100B91F
+ *        = 0x05010100B91F
  */
 
 /**
