@@ -52,7 +52,6 @@ const UserFlowGuide = ({ vaultState, userPosition, tokenSymbol, autoRelayXcm }: 
   const hasDeposit = userPosition.shares > 0 || userPosition.dotValue > 0;
   const hasPending = userPosition.pendingWithdrawal > 0;
   const canWithdraw = hasDeposit && !hasPending;
-  const canClaim = hasPending;
 
   const depositStatus: StepStatus = hasDeposit || hasPending ? 'completed' : 'active';
   const relayStatus: StepStatus = !hasDeposit && !hasPending
@@ -61,7 +60,7 @@ const UserFlowGuide = ({ vaultState, userPosition, tokenSymbol, autoRelayXcm }: 
   const withdrawStatus: StepStatus = hasPending
     ? 'completed'
     : (canWithdraw ? 'active' : 'upcoming');
-  const claimStatus: StepStatus = canClaim ? 'active' : 'upcoming';
+  const claimStatus: StepStatus = hasPending ? 'active' : 'upcoming';
 
   return (
     <div className="bg-card border border-border rounded-lg p-5 space-y-3">
@@ -99,7 +98,11 @@ const UserFlowGuide = ({ vaultState, userPosition, tokenSymbol, autoRelayXcm }: 
           index={4}
           title="Claim"
           status={claimStatus}
-          body={`Claim redeemed ${tokenSymbol} when pending balance becomes available.`}
+          body={hasPending
+            ? (userPosition.claimReady
+              ? `Settlement is attested. Claim redeemed ${tokenSymbol} now.`
+              : `Waiting for operator settlement attestation before claim.`)
+            : `Claim redeemed ${tokenSymbol} after withdrawal settlement.`}
         />
       </div>
     </div>

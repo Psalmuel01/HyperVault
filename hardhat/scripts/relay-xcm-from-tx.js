@@ -27,10 +27,19 @@ function requireHash(name) {
   return value;
 }
 
+function parseBigIntEnv(name) {
+  const raw = (process.env[name] || "").trim();
+  if (!raw) return null;
+  if (!/^[0-9]+$/.test(raw)) throw new Error(`${name} must be an integer`);
+  return BigInt(raw);
+}
+
 async function main() {
   const [signer] = await ethers.getSigners();
   const vaultAddress = requireAddress("VAULT_ADDRESS");
   const txHash = requireHash("DEPOSIT_TX");
+  const gasPrice = parseBigIntEnv("GAS_PRICE_WEI");
+  const gasLimit = parseBigIntEnv("GAS_LIMIT");
 
   const vault = await ethers.getContractAt("HyperVault", vaultAddress, signer);
   const receipt = await ethers.provider.getTransactionReceipt(txHash);
@@ -60,7 +69,8 @@ async function main() {
   const tx = await signer.sendTransaction({
     to: XCM_PRECOMPILE,
     data: XCM_IFACE.encodeFunctionData("send", [dest, message]),
-    gasLimit: 2_000_000
+    gasLimit: gasLimit ?? 2_000_000n,
+    ...(gasPrice !== null ? { gasPrice } : {})
   });
   const rcpt = await tx.wait();
   console.log(`✅ Relayed (tx: ${tx.hash}, status=${rcpt.status})`);
@@ -73,4 +83,3 @@ main()
     console.error(err);
     process.exit(1);
   });
-

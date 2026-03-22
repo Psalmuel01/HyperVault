@@ -60,8 +60,18 @@ function maybeBytes32(name) {
   return value;
 }
 
+function parseBigIntEnv(name, fallback = null) {
+  const raw = (process.env[name] || "").trim();
+  if (!raw) return fallback;
+  if (!/^[0-9]+$/.test(raw)) {
+    throw new Error(`${name} must be an integer in wei`);
+  }
+  return BigInt(raw);
+}
+
 async function main() {
   const [deployer] = await ethers.getSigners();
+  const network = await ethers.provider.getNetwork();
   const useNativeDot = parseBool("USE_NATIVE_DOT");
 
   const explicitDot = useNativeDot ? null : maybeAddress(process.env.DOT_ERC20_ADDRESS);
@@ -73,6 +83,12 @@ async function main() {
     throw new Error("Set USE_NATIVE_DOT=true for canonical mode, or set DOT_ERC20_ADDRESS/DOT_ASSET_ID.");
   }
   const hubSovereign = maybeBytes32("HUB_SOVEREIGN");
+  const defaultGasPrice = network.chainId === 420420417n ? 1_000_000_000_000n : null;
+  const txGasPrice = parseBigIntEnv("GAS_PRICE_WEI", defaultGasPrice);
+  const txGasLimit = parseBigIntEnv("GAS_LIMIT");
+  const txOverrides = {};
+  if (txGasPrice !== null) txOverrides.gasPrice = txGasPrice;
+  if (txGasLimit !== null) txOverrides.gasLimit = txGasLimit;
 
   console.log("\n═══════════════════════════════════════════════");
   console.log("  HyperVault — Polkadot Hub Deploy");
@@ -89,11 +105,15 @@ async function main() {
   if (!useNativeDot && (process.env.DOT_ASSET_ID || "").trim()) {
     console.log(`  DOT_ASSET_ID: ${process.env.DOT_ASSET_ID.trim()} (derived precompile)`);
   }
+  if (txGasPrice !== null) console.log(`  Gas price : ${txGasPrice} wei`);
+  if (txGasLimit !== null) console.log(`  Gas limit : ${txGasLimit}`);
   console.log(`  Hub Sovereign: ${hubSovereign}\n`);
 
   console.log("[1/2] Deploying BuildCallData Library...");
   const BuildCallData = await ethers.getContractFactory("BuildCallData");
-  const lib = await BuildCallData.deploy();
+  const lib = await BuildCallData.deploy(txOverrides);
+  const libTx = lib.deploymentTransaction();
+  if (libTx) console.log(`      ↳ tx: ${libTx.hash}`);
   await lib.waitForDeployment();
   const libAddress = await lib.getAddress();
   console.log(`      ✅ BuildCallData: ${libAddress}`);
@@ -109,8 +129,11 @@ async function main() {
   const vault = await HyperVault.deploy(
     dotTokenAddress,
     hubSovereign,
-    false
+    false,
+    txOverrides
   );
+  const vaultTx = vault.deploymentTransaction();
+  if (vaultTx) console.log(`      ↳ tx: ${vaultTx.hash}`);
   await vault.waitForDeployment();
   const vaultAddress = await vault.getAddress();
   console.log(`      ✅ HyperVault: ${vaultAddress}`);

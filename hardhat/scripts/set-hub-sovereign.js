@@ -24,15 +24,27 @@ function requireBytes32(name) {
   return value;
 }
 
+function parseBigIntEnv(name) {
+  const raw = (process.env[name] || "").trim();
+  if (!raw) return null;
+  if (!/^[0-9]+$/.test(raw)) throw new Error(`${name} must be an integer`);
+  return BigInt(raw);
+}
+
 async function main() {
   const [signer] = await ethers.getSigners();
   const vaultAddress = requireAddress("VAULT_ADDRESS");
   const hubSovereign = requireBytes32("HUB_SOVEREIGN");
+  const gasPrice = parseBigIntEnv("GAS_PRICE_WEI");
+  const gasLimit = parseBigIntEnv("GAS_LIMIT");
+  const overrides = {};
+  if (gasPrice !== null) overrides.gasPrice = gasPrice;
+  if (gasLimit !== null) overrides.gasLimit = gasLimit;
 
   const vault = await ethers.getContractAt("HyperVault", vaultAddress, signer);
 
   console.log(`Setting hub sovereign on ${vaultAddress}...`);
-  const tx = await vault.setHubSovereign(hubSovereign);
+  const tx = await vault.setHubSovereign(hubSovereign, overrides);
   await tx.wait();
   console.log(`✅ Updated (tx: ${tx.hash})`);
 }

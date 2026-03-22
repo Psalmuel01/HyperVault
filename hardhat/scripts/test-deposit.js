@@ -35,8 +35,17 @@ function parseBool(value) {
   return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
 }
 
+function parseBigIntEnv(name) {
+  const raw = (process.env[name] || "").trim();
+  if (!raw) return null;
+  if (!/^[0-9]+$/.test(raw)) throw new Error(`${name} must be an integer`);
+  return BigInt(raw);
+}
+
 async function main() {
   const [signer] = await ethers.getSigners();
+  const gasPrice = parseBigIntEnv("GAS_PRICE_WEI");
+  const gasLimit = parseBigIntEnv("GAS_LIMIT");
 
   // Load vault address from deploy output
   const vaultAddress = normalizeAddress(process.env.VAULT_ADDRESS)
@@ -96,8 +105,8 @@ async function main() {
   // Deposit
   console.log(`[3] Depositing ${ethers.formatUnits(DEPOSIT_AMOUNT, dotDecimals)} ${dotSymbol}...`);
   const depositTx = nativeMode
-    ? await vault.deposit(DEPOSIT_AMOUNT, { value: DEPOSIT_AMOUNT, gasLimit: 500_000 })
-    : await vault.deposit(DEPOSIT_AMOUNT, { gasLimit: 500_000 });
+    ? await vault.deposit(DEPOSIT_AMOUNT, { value: DEPOSIT_AMOUNT, gasLimit: gasLimit ?? 500_000n, ...(gasPrice !== null ? { gasPrice } : {}) })
+    : await vault.deposit(DEPOSIT_AMOUNT, { gasLimit: gasLimit ?? 500_000n, ...(gasPrice !== null ? { gasPrice } : {}) });
   const receipt = await depositTx.wait();
   console.log(`    ✅ Deposited (tx: ${depositTx.hash})`);
 
@@ -127,7 +136,8 @@ async function main() {
       const relayTx = await signer.sendTransaction({
         to: XCM_PRECOMPILE,
         data: XCM_IFACE.encodeFunctionData("send", [dest, message]),
-        gasLimit: 2_000_000
+        gasLimit: gasLimit ?? 2_000_000n,
+        ...(gasPrice !== null ? { gasPrice } : {})
       });
       const relayRcpt = await relayTx.wait();
       console.log(`    ✅ Relayed (tx: ${relayTx.hash}, status=${relayRcpt.status})`);

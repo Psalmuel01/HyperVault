@@ -1,9 +1,15 @@
-// scripts/set-external-xcm-mode.js
+// scripts/report-live-yield.js
 // ─────────────────────────────────────────────────────────────
-//  Toggle external XCM relayer mode on HyperVault.
+//  Credit realized live yield into vault share accounting.
+//
+//  Required env:
+//    VAULT_ADDRESS   (0x...)
+//    YIELD_AMOUNT    (human units, e.g. 0.125)
+//    PROOF_REF       (bytes32 0x...)
 //
 //  Usage:
-//    VAULT_ADDRESS=0x... EXTERNAL_XCM_MODE=true npx hardhat run scripts/set-external-xcm-mode.js --network polkadotTestnet
+//    VAULT_ADDRESS=0x... YIELD_AMOUNT=0.125 PROOF_REF=0x... \
+//      npx hardhat run scripts/report-live-yield.js --network polkadotTestnet
 // ─────────────────────────────────────────────────────────────
 
 const { ethers } = require("hardhat");
@@ -16,11 +22,12 @@ function requireAddress(name) {
   return value;
 }
 
-function requireBool(name) {
-  const raw = (process.env[name] || "").trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(raw)) return true;
-  if (["0", "false", "no", "off"].includes(raw)) return false;
-  throw new Error(`${name} must be true/false`);
+function requireBytes32(name) {
+  const value = (process.env[name] || "").trim();
+  if (!/^0x[a-fA-F0-9]{64}$/.test(value)) {
+    throw new Error(`${name} must be bytes32 hex`);
+  }
+  return value;
 }
 
 function parseBigIntEnv(name) {
@@ -33,18 +40,30 @@ function parseBigIntEnv(name) {
 async function main() {
   const [signer] = await ethers.getSigners();
   const vaultAddress = requireAddress("VAULT_ADDRESS");
-  const mode = requireBool("EXTERNAL_XCM_MODE");
+  const proofRef = requireBytes32("PROOF_REF");
   const gasPrice = parseBigIntEnv("GAS_PRICE_WEI");
   const gasLimit = parseBigIntEnv("GAS_LIMIT");
   const overrides = {};
   if (gasPrice !== null) overrides.gasPrice = gasPrice;
   if (gasLimit !== null) overrides.gasLimit = gasLimit;
-  const vault = await ethers.getContractAt("HyperVault", vaultAddress, signer);
+  const amountHuman = (process.env.YIELD_AMOUNT || "").trim();
+  if (!amountHuman) {
+    throw new Error("YIELD_AMOUNT is required");
+  }
 
-  console.log(`Setting external XCM mode=${mode} on ${vaultAddress}...`);
-  const tx = await vault.setExternalXcmExecutorMode(mode, overrides);
+  const vault = await ethers.getContractAt("HyperVault", vaultAddress, signer);
+  const dotDecimals = Number(await vault.dotDecimals());
+  const amount = ethers.parseUnits(amountHuman, dotDecimals);
+
+  console.log(`Reporting live yield...`);
+  console.log(`  Vault      : ${vaultAddress}`);
+  console.log(`  Yield      : ${amountHuman}`);
+  console.log(`  Dot decimals: ${dotDecimals}`);
+  console.log(`  Proof      : ${proofRef}`);
+
+  const tx = await vault.reportLiveYield(amount, proofRef, overrides);
   await tx.wait();
-  console.log(`✅ Updated (tx: ${tx.hash})`);
+  console.log(`✅ Live yield reported (tx: ${tx.hash})`);
 }
 
 main()

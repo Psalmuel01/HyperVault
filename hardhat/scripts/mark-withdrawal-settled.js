@@ -1,9 +1,15 @@
-// scripts/set-external-xcm-mode.js
+// scripts/mark-withdrawal-settled.js
 // ─────────────────────────────────────────────────────────────
-//  Toggle external XCM relayer mode on HyperVault.
+//  Attest a user's pending withdrawal settlement.
+//
+//  Required env:
+//    VAULT_ADDRESS   (0x...)
+//    USER_ADDRESS    (0x...)
+//    PROOF_REF       (bytes32 0x...)
 //
 //  Usage:
-//    VAULT_ADDRESS=0x... EXTERNAL_XCM_MODE=true npx hardhat run scripts/set-external-xcm-mode.js --network polkadotTestnet
+//    VAULT_ADDRESS=0x... USER_ADDRESS=0x... PROOF_REF=0x... \
+//      npx hardhat run scripts/mark-withdrawal-settled.js --network polkadotTestnet
 // ─────────────────────────────────────────────────────────────
 
 const { ethers } = require("hardhat");
@@ -16,11 +22,12 @@ function requireAddress(name) {
   return value;
 }
 
-function requireBool(name) {
-  const raw = (process.env[name] || "").trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(raw)) return true;
-  if (["0", "false", "no", "off"].includes(raw)) return false;
-  throw new Error(`${name} must be true/false`);
+function requireBytes32(name) {
+  const value = (process.env[name] || "").trim();
+  if (!/^0x[a-fA-F0-9]{64}$/.test(value)) {
+    throw new Error(`${name} must be bytes32 hex`);
+  }
+  return value;
 }
 
 function parseBigIntEnv(name) {
@@ -33,18 +40,24 @@ function parseBigIntEnv(name) {
 async function main() {
   const [signer] = await ethers.getSigners();
   const vaultAddress = requireAddress("VAULT_ADDRESS");
-  const mode = requireBool("EXTERNAL_XCM_MODE");
+  const userAddress = requireAddress("USER_ADDRESS");
+  const proofRef = requireBytes32("PROOF_REF");
   const gasPrice = parseBigIntEnv("GAS_PRICE_WEI");
   const gasLimit = parseBigIntEnv("GAS_LIMIT");
   const overrides = {};
   if (gasPrice !== null) overrides.gasPrice = gasPrice;
   if (gasLimit !== null) overrides.gasLimit = gasLimit;
+
   const vault = await ethers.getContractAt("HyperVault", vaultAddress, signer);
 
-  console.log(`Setting external XCM mode=${mode} on ${vaultAddress}...`);
-  const tx = await vault.setExternalXcmExecutorMode(mode, overrides);
+  console.log(`Marking withdrawal settled...`);
+  console.log(`  Vault : ${vaultAddress}`);
+  console.log(`  User  : ${userAddress}`);
+  console.log(`  Proof : ${proofRef}`);
+
+  const tx = await vault.recordWithdrawalSettlement(userAddress, proofRef, overrides);
   await tx.wait();
-  console.log(`✅ Updated (tx: ${tx.hash})`);
+  console.log(`✅ Settlement recorded (tx: ${tx.hash})`);
 }
 
 main()

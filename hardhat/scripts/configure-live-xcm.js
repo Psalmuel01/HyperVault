@@ -62,6 +62,13 @@ function parseOptionalBool(name) {
   throw new Error(`${name} must be true/false`);
 }
 
+function parseBigIntEnv(name) {
+  const raw = (process.env[name] || "").trim();
+  if (!raw) return null;
+  if (!/^[0-9]+$/.test(raw)) throw new Error(`${name} must be an integer`);
+  return BigInt(raw);
+}
+
 async function main() {
   const [signer] = await ethers.getSigners();
   const network = await ethers.provider.getNetwork();
@@ -74,6 +81,11 @@ async function main() {
   const refTime = parseUint("XCM_REF_TIME", 5_000_000_000);
   const proofSize = parseUint("XCM_PROOF_SIZE", 131_072);
   const externalXcmMode = parseOptionalBool("EXTERNAL_XCM_MODE");
+  const gasPrice = parseBigIntEnv("GAS_PRICE_WEI");
+  const gasLimit = parseBigIntEnv("GAS_LIMIT");
+  const overrides = {};
+  if (gasPrice !== null) overrides.gasPrice = gasPrice;
+  if (gasLimit !== null) overrides.gasLimit = gasLimit;
 
   const vault = await ethers.getContractAt("HyperVault", vaultAddress, signer);
   const nativeMode = await vault.nativeDotMode();
@@ -86,7 +98,7 @@ async function main() {
   }
 
   console.log(`Configuring live XCM on ${vaultAddress}...`);
-  const setWeightsTx = await vault.setXcmWeights(refTime, proofSize);
+  const setWeightsTx = await vault.setXcmWeights(refTime, proofSize, overrides);
   await setWeightsTx.wait();
   console.log(`✅ setXcmWeights (tx: ${setWeightsTx.hash})`);
 
@@ -96,13 +108,14 @@ async function main() {
     destChainIndexRaw,
     remark,
     channelId,
-    true
+    true,
+    overrides
   );
   await setConfigTx.wait();
   console.log(`✅ setXcmConfig enabled=true (tx: ${setConfigTx.hash})`);
 
   if (externalXcmMode !== null) {
-    const setExternalTx = await vault.setExternalXcmExecutorMode(externalXcmMode);
+    const setExternalTx = await vault.setExternalXcmExecutorMode(externalXcmMode, overrides);
     await setExternalTx.wait();
     console.log(`✅ setExternalXcmExecutorMode=${externalXcmMode} (tx: ${setExternalTx.hash})`);
   }

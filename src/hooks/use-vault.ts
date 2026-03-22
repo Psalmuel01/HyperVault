@@ -25,6 +25,7 @@ export interface UserPosition {
   yieldPercent: number;
   depositTimestamp: number | null;
   pendingWithdrawal: number;
+  claimReady: boolean;
 }
 
 export interface VaultState {
@@ -93,6 +94,16 @@ const fmtSharePrice = (raw: bigint | undefined): number => {
   return Number(formatUnits(raw, 18));
 };
 
+const WITHDRAWAL_SETTLED_ABI = [
+  {
+    inputs: [{ name: "", type: "address" }],
+    name: "withdrawalSettled",
+    outputs: [{ name: "", type: "bool" }],
+    stateMutability: "view",
+    type: "function",
+  },
+] as const;
+
 // ─────────────────────────────────────────────────────────────
 //  Main hook
 // ─────────────────────────────────────────────────────────────
@@ -127,6 +138,7 @@ export function useVault() {
     yieldPercent: 0,
     depositTimestamp: null,
     pendingWithdrawal: 0,
+    claimReady: false,
   });
 
   // ── Contract reads: Vault state ────────────────────────────
@@ -166,6 +178,14 @@ export function useVault() {
     address: VAULT_ADDRESS,
     abi: VAULT_ABI,
     functionName: 'getUserInfo',
+    args: address ? [address] : undefined,
+    query: { enabled: contractReady && isConnected && !!address, refetchInterval: 10_000 },
+  });
+
+  const { data: withdrawalSettledRaw, error: withdrawalSettledReadError } = useReadContract({
+    address: VAULT_ADDRESS,
+    abi: WITHDRAWAL_SETTLED_ABI,
+    functionName: 'withdrawalSettled',
     args: address ? [address] : undefined,
     query: { enabled: contractReady && isConnected && !!address, refetchInterval: 10_000 },
   });
@@ -228,6 +248,8 @@ export function useVault() {
     const sharesNum = fmtShares(shares);
     const dotValueNum = fmtDot(dotValue, tokenDecimals);
     const yieldNum = fmtDot(estimatedYield, tokenDecimals);
+    const pendingNum = fmtDot(pendingWithdrawal, tokenDecimals);
+    const settled = withdrawalSettledReadError ? true : Boolean(withdrawalSettledRaw);
     const principal = dotValueNum - yieldNum;
 
     return {
@@ -236,9 +258,10 @@ export function useVault() {
       yieldEarned: yieldNum,
       yieldPercent: principal > 0 ? (yieldNum / principal) * 100 : 0,
       depositTimestamp: Number(depositedAt) > 0 ? Number(depositedAt) * 1000 : null,
-      pendingWithdrawal: fmtDot(pendingWithdrawal, tokenDecimals),
+      pendingWithdrawal: pendingNum,
+      claimReady: settled && pendingNum > 0,
     };
-  }, [contractReady, userInfoRaw, mockUserPosition, dotDecimalsRaw, vaultDotDecimalsRaw]);
+  }, [contractReady, userInfoRaw, mockUserPosition, dotDecimalsRaw, vaultDotDecimalsRaw, withdrawalSettledRaw, withdrawalSettledReadError]);
 
   // ── Derived: DOT balance ───────────────────────────────────
   const dotBalance: number = useMemo(() => {
@@ -598,6 +621,7 @@ export function useVault() {
         yieldPercent: 0,
         depositTimestamp: mockUserPosition.depositTimestamp || Date.now(),
         pendingWithdrawal: mockUserPosition.pendingWithdrawal,
+        claimReady: mockUserPosition.claimReady,
       });
       setMockVaultState(prev => ({
         ...prev,
@@ -718,6 +742,7 @@ export function useVault() {
         yieldPercent: newShares > 0 ? mockUserPosition.yieldPercent : 0,
         depositTimestamp: newShares > 0 ? mockUserPosition.depositTimestamp : null,
         pendingWithdrawal: mockUserPosition.pendingWithdrawal,
+        claimReady: mockUserPosition.claimReady,
       });
       setMockVaultState(prev => ({
         ...prev,
@@ -751,6 +776,10 @@ export function useVault() {
 
   const claimWithdrawal = useCallback(async () => {
     if (userPosition.pendingWithdrawal <= 0) return;
+    if (!userPosition.claimReady && contractReady) {
+      toast.warning('Claim is blocked until settlement attestation is recorded by the operator.');
+      return;
+    }
 
     if (contractReady && address && publicClient) {
       try {
@@ -795,8 +824,8 @@ export function useVault() {
 
     // Mock mode: clear pending balance immediately.
     setMockDotBalance(prev => prev + mockUserPosition.pendingWithdrawal);
-    setMockUserPosition(prev => ({ ...prev, pendingWithdrawal: 0 }));
-  }, [userPosition.pendingWithdrawal, contractReady, address, publicClient, writeContractAsync, mockUserPosition.pendingWithdrawal, waitAndRefresh]);
+    setMockUserPosition(prev => ({ ...prev, pendingWithdrawal: 0, claimReady: false }));
+  }, [userPosition.pendingWithdrawal, userPosition.claimReady, contractReady, address, publicClient, writeContractAsync, mockUserPosition.pendingWithdrawal, waitAndRefresh]);
 
   return {
     connected: isConnected,

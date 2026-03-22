@@ -49,6 +49,7 @@ async function main() {
     : await (await ethers.getContractAt("IERC20", dotAddress, signer)).balanceOf(vaultAddress);
   const isConfigured =
     state._xcmEnabled &&
+    hubSovereign !== ethers.ZeroHash &&
     dotCurrencyId !== "0x0000" &&
     vDotCurrencyId !== "0x0000" &&
     destChainIndexRaw !== "0x00" &&
@@ -73,6 +74,7 @@ async function main() {
   console.log(`  External XCM mode: ${externalXcmMode}`);
   console.log(`  XCM configured   : ${isConfigured}`);
   console.log(`  Paused           : ${state._paused}`);
+  console.log(`  Accrued yield    : ${ethers.formatUnits(state._mockAccruedYield, dotDecimals)}`);
   console.log(`  Total deposited  : ${ethers.formatUnits(state._totalDotDeposited, dotDecimals)}`);
   console.log(`  DOT vault bal    : ${ethers.formatUnits(vaultDotBal, dotDecimals)}`);
   console.log("═══════════════════════════════════════════════\n");

@@ -102,6 +102,8 @@ contract HyperVault is ReentrancyGuard, Ownable {
 
     /// @notice Accumulated mock yield in DOT base units – only meaningful in mock mode.
     uint256 public mockAccruedYield;
+    /// @notice Realized yield credited in live mode (manually reported from settlement proofs).
+    uint256 public liveAccruedYield;
 
     /// @notice Timestamp of the last mock yield accrual.
     uint256 public lastYieldTimestamp;
@@ -117,6 +119,10 @@ contract HyperVault is ReentrancyGuard, Ownable {
 
     /// @notice Vault DOT balance snapshot before dispatching redeem.
     mapping(address => uint256) public pendingWithdrawalBalanceStart;
+    /// @notice True when pending withdrawal has been attested by settlement proof.
+    mapping(address => bool) public withdrawalSettled;
+    /// @notice Off-chain settlement proof reference hash (e.g. Bifrost/XCM evidence).
+    mapping(address => bytes32) public withdrawalSettlementProof;
 
     /// @notice Running count of unique depositors.
     uint256 public depositorCount;
@@ -207,6 +213,16 @@ contract HyperVault is ReentrancyGuard, Ownable {
 
     event HubSovereignUpdated(bytes32 hubSovereign);
     event ExternalXcmExecutorModeUpdated(bool enabled);
+    event WithdrawalSettlementRecorded(
+        address indexed user,
+        uint256 expectedAmount,
+        bytes32 proofRef
+    );
+    event LiveYieldReported(
+        uint256 amount,
+        bytes32 proofRef,
+        uint256 newLiveAccruedYield
+    );
 
     // ─────────────────────────────────────────────────────────
     //  Errors
@@ -222,6 +238,8 @@ contract HyperVault is ReentrancyGuard, Ownable {
     error XcmNotConfigured();
     error InvalidNativeDeposit(uint256 expected, uint256 actual);
     error UnexpectedNativeValue(uint256 actual);
+    error WithdrawalNotSettled();
+    error InvalidSettlementProof();
 
     // ─────────────────────────────────────────────────────────
     //  Pause
@@ -252,6 +270,7 @@ contract HyperVault is ReentrancyGuard, Ownable {
         dotToken      = IERC20(_dotToken);
         nativeDotMode = _dotToken == address(0);
         dotDecimals   = nativeDotMode ? 10 : _safeReadDecimals(_dotToken);
+        if (_xcmEnabled && _hubSovereign == bytes32(0)) revert InvalidSovereign();
         hubSovereign  = _hubSovereign;
         xcmEnabled    = _xcmEnabled;
         lastYieldTimestamp = block.timestamp;
@@ -330,9 +349,7 @@ contract HyperVault is ReentrancyGuard, Ownable {
         // Burn shares.
         shares[msg.sender] -= shareAmount;
         totalShares        -= shareAmount;
-        totalDotDeposited   = totalDotDeposited > dotOwed
-            ? totalDotDeposited - dotOwed
-            : 0;
+        _consumeFromVaultAccounting(dotOwed);
 
         emit WithdrawalInitiated(msg.sender, shareAmount, dotOwed);
 
@@ -341,9 +358,14 @@ contract HyperVault is ReentrancyGuard, Ownable {
             _settleMockWithdrawal(msg.sender, dotOwed);
         } else {
             // ── Live mode: async via XCM ──────────────────────
-            require(pendingWithdrawal[msg.sender] == 0, "pending withdrawal exists");
+            require(
+                pendingWithdrawal[msg.sender] == 0 && !withdrawalSettled[msg.sender],
+                "pending withdrawal exists"
+            );
             pendingWithdrawal[msg.sender] = dotOwed;
             pendingWithdrawalBalanceStart[msg.sender] = _vaultDotBalance();
+            withdrawalSettled[msg.sender] = false;
+            withdrawalSettlementProof[msg.sender] = bytes32(0);
             _dispatchRedeem(msg.sender, dotOwed);
         }
     }
@@ -368,6 +390,8 @@ contract HyperVault is ReentrancyGuard, Ownable {
 
         pendingWithdrawal[user] = 0;
         pendingWithdrawalBalanceStart[user] = 0;
+        withdrawalSettled[user] = false;
+        withdrawalSettlementProof[user] = bytes32(0);
 
         uint256 currentBal = _vaultDotBalance();
         if (currentBal < startBal) revert TransferFailed();
@@ -378,7 +402,7 @@ contract HyperVault is ReentrancyGuard, Ownable {
         // Withdraw() reduced `totalDotDeposited` by expected. Adjust to actual.
         if (actual > expected) {
             uint256 extra = actual - expected;
-            totalDotDeposited = totalDotDeposited > extra ? totalDotDeposited - extra : 0;
+            _consumeFromVaultAccounting(extra);
         } else if (expected > actual) {
             uint256 refund = expected - actual;
             totalDotDeposited += refund;
@@ -397,15 +421,40 @@ contract HyperVault is ReentrancyGuard, Ownable {
     function claimWithdrawal() external nonReentrant {
         uint256 expected = pendingWithdrawal[msg.sender];
         if (expected == 0) revert NothingToWithdraw();
+        if (!withdrawalSettled[msg.sender]) revert WithdrawalNotSettled();
 
         uint256 available = _vaultDotBalance();
         require(available >= expected, "redeem pending");
 
         pendingWithdrawal[msg.sender] = 0;
         pendingWithdrawalBalanceStart[msg.sender] = 0;
+        withdrawalSettled[msg.sender] = false;
 
         _pushDot(msg.sender, expected);
         emit WithdrawalCompleted(msg.sender, expected, 0);
+    }
+
+    /**
+     * @notice Mark a user's pending withdrawal as settled using an off-chain proof reference.
+     *         This gates `claimWithdrawal()` so users cannot claim before settlement attestation.
+     *
+     * @param user Address to mark settled.
+     * @param proofRef Off-chain proof hash/reference (must be non-zero).
+     */
+    function recordWithdrawalSettlement(address user, bytes32 proofRef)
+        external
+        onlyOwner
+        nonReentrant
+    {
+        uint256 expected = pendingWithdrawal[user];
+        if (expected == 0) revert NothingToWithdraw();
+        if (proofRef == bytes32(0)) revert InvalidSettlementProof();
+        if (_vaultDotBalance() < expected) revert TransferFailed();
+
+        withdrawalSettled[user] = true;
+        withdrawalSettlementProof[user] = proofRef;
+
+        emit WithdrawalSettlementRecorded(user, expected, proofRef);
     }
 
     // ─────────────────────────────────────────────────────────
@@ -576,7 +625,7 @@ contract HyperVault is ReentrancyGuard, Ownable {
             totalDotDeposited,
             totalShares,
             currentSharePrice(),
-            mockAccruedYield,
+            _isLiveXcmConfigured() ? liveAccruedYield : mockAccruedYield,
             depositorCount,
             xcmEnabled,
             paused
@@ -610,18 +659,20 @@ contract HyperVault is ReentrancyGuard, Ownable {
     //  Internal helpers
     // ─────────────────────────────────────────────────────────
 
-    /// @dev Total vault DOT including mock accrued yield.
+    /// @dev Total vault DOT including accrued yield for the active mode.
     function _totalVaultDot() internal view returns (uint256) {
         if (_isLiveXcmConfigured()) {
-            return totalDotDeposited;
+            return totalDotDeposited + liveAccruedYield;
         }
         return totalDotDeposited + mockAccruedYield;
     }
 
-    /// @dev Rough per-user yield estimate (pro-rata share of total mock yield).
+    /// @dev Rough per-user yield estimate (pro-rata share of accrued yield pool).
     function _estimateUserYield(address user) internal view returns (uint256) {
         if (totalShares == 0 || shares[user] == 0) return 0;
-        if (_isLiveXcmConfigured()) return 0;
+        if (_isLiveXcmConfigured()) {
+            return (liveAccruedYield * shares[user]) / totalShares;
+        }
 
         // Accrue virtually (without writing state) for view accuracy.
         uint256 elapsed   = block.timestamp - lastYieldTimestamp;
@@ -630,6 +681,26 @@ contract HyperVault is ReentrancyGuard, Ownable {
 
         uint256 totalYield = mockAccruedYield + pendYield;
         return (totalYield * shares[user]) / totalShares;
+    }
+
+    /// @dev Consume value from accrued yield first, then principal accounting.
+    function _consumeFromVaultAccounting(uint256 amount) internal {
+        if (amount == 0) return;
+
+        uint256 accrued = _isLiveXcmConfigured() ? liveAccruedYield : mockAccruedYield;
+        uint256 fromAccrued = accrued > amount ? amount : accrued;
+        if (fromAccrued > 0) {
+            if (_isLiveXcmConfigured()) {
+                liveAccruedYield -= fromAccrued;
+            } else {
+                mockAccruedYield -= fromAccrued;
+            }
+        }
+
+        uint256 remainder = amount - fromAccrued;
+        if (remainder == 0) return;
+        if (totalDotDeposited < remainder) revert TransferFailed();
+        totalDotDeposited -= remainder;
     }
 
     // ─────────────────────────────────────────────────────────
@@ -655,6 +726,7 @@ contract HyperVault is ReentrancyGuard, Ownable {
         bool _enabled
     ) external onlyOwner {
         if (_enabled) {
+            if (hubSovereign == bytes32(0)) revert InvalidSovereign();
             require(_dotCurrencyId != bytes2(0), "dotCurrencyId=0");
             require(_vDotCurrencyId != bytes2(0), "vDotCurrencyId=0");
             require(_destChainIndexRaw != bytes1(0), "destChainIndexRaw=0");
@@ -682,6 +754,24 @@ contract HyperVault is ReentrancyGuard, Ownable {
             _channelId,
             _enabled
         );
+    }
+
+    /**
+     * @notice Credit realized yield in live mode using an off-chain settlement proof reference.
+     *         This is the production path for reflecting real Bifrost yield in share price math.
+     *
+     * @param amount Yield amount in DOT base units.
+     * @param proofRef Settlement/report proof reference (must be non-zero).
+     */
+    function reportLiveYield(uint256 amount, bytes32 proofRef)
+        external
+        onlyOwner
+    {
+        if (amount == 0) revert ZeroAmount();
+        if (proofRef == bytes32(0)) revert InvalidSettlementProof();
+        if (!_isLiveXcmConfigured()) revert XcmNotConfigured();
+        liveAccruedYield += amount;
+        emit LiveYieldReported(amount, proofRef, liveAccruedYield);
     }
 
     /**
@@ -768,6 +858,7 @@ contract HyperVault is ReentrancyGuard, Ownable {
     function _isLiveXcmConfigured() internal view returns (bool) {
         return
             xcmEnabled &&
+            hubSovereign != bytes32(0) &&
             dotCurrencyId != bytes2(0) &&
             vDotCurrencyId != bytes2(0) &&
             destChainIndexRaw != bytes1(0) &&
