@@ -49,21 +49,15 @@ interface IXcm {
      * @notice Send an XCM message to a destination chain.
      * @param dest     SCALE-encoded VersionedLocation of the destination.
      * @param message  SCALE-encoded VersionedXcm message body.
-     * @return success True if the precompile accepted the call.
      */
-    function send(bytes memory dest, bytes memory message)
-        external
-        returns (bool success);
+    function send(bytes memory dest, bytes memory message) external;
 
     /**
      * @notice Execute an XCM message locally.
      * @param message    SCALE-encoded VersionedXcm message body.
      * @param maxWeight  Maximum weight to consume.
-     * @return success   True if execution succeeded within weight limit.
      */
-    function execute(bytes memory message, Weight memory maxWeight)
-        external
-        returns (bool success);
+    function execute(bytes memory message, Weight memory maxWeight) external;
 
     /**
      * @notice Estimate the weight of an XCM message (view, no state change).

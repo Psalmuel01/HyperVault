@@ -127,6 +127,11 @@ contract HyperVault is ReentrancyGuard, Ownable {
     /// @notice Whether to actually dispatch XCM messages or just emit events.
     bool public xcmEnabled;
 
+    /// @notice If true, vault prepares XCM payloads but expects an external
+    ///         relayer EOA to submit IXcm.send() (useful on runtimes where
+    ///         contract-origin XCM send is unsupported).
+    bool public externalXcmExecutorMode;
+
     // ---------------------------------------------------------------------
     // Live XCM -> Bifrost SLPx create_order configuration
     // ---------------------------------------------------------------------
@@ -181,6 +186,14 @@ contract HyperVault is ReentrancyGuard, Ownable {
         bool    live            // true = real XCM, false = mock
     );
 
+    event XcmMessagePrepared(
+        address indexed user,
+        string  action,         // "mint" | "redeem"
+        uint256 dotAmount,
+        bytes   dest,
+        bytes   message
+    );
+
     event MockYieldAccrued(uint256 yieldAdded, uint256 newTotalDot);
 
     event XcmConfigUpdated(
@@ -193,6 +206,7 @@ contract HyperVault is ReentrancyGuard, Ownable {
     );
 
     event HubSovereignUpdated(bytes32 hubSovereign);
+    event ExternalXcmExecutorModeUpdated(bool enabled);
 
     // ─────────────────────────────────────────────────────────
     //  Errors
@@ -426,8 +440,14 @@ contract HyperVault is ReentrancyGuard, Ownable {
             xcmProofSize
         );
 
-        bool ok = IXcm(XCM_PRECOMPILE).send(dest, message);
-        if (!ok) revert XcmCallFailed();
+        emit XcmMessagePrepared(user, "mint", dotAmount, dest, message);
+
+        if (externalXcmExecutorMode) {
+            emit XcmDispatched(user, "mint", dotAmount, false);
+            return;
+        }
+
+        IXcm(XCM_PRECOMPILE).send(dest, message);
 
         emit XcmDispatched(user, "mint", dotAmount, true);
     }
@@ -459,8 +479,14 @@ contract HyperVault is ReentrancyGuard, Ownable {
             xcmProofSize
         );
 
-        bool ok = IXcm(XCM_PRECOMPILE).send(dest, message);
-        if (!ok) revert XcmCallFailed();
+        emit XcmMessagePrepared(user, "redeem", dotAmount, dest, message);
+
+        if (externalXcmExecutorMode) {
+            emit XcmDispatched(user, "redeem", dotAmount, false);
+            return;
+        }
+
+        IXcm(XCM_PRECOMPILE).send(dest, message);
 
         emit XcmDispatched(user, "redeem", dotAmount, true);
     }
@@ -667,6 +693,14 @@ contract HyperVault is ReentrancyGuard, Ownable {
     {
         xcmRefTime   = _refTime;
         xcmProofSize = _proofSize;
+    }
+
+    /**
+     * @notice Toggle external relayer mode for XCM dispatch.
+     */
+    function setExternalXcmExecutorMode(bool _enabled) external onlyOwner {
+        externalXcmExecutorMode = _enabled;
+        emit ExternalXcmExecutorModeUpdated(_enabled);
     }
 
     /**

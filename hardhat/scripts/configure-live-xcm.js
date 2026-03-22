@@ -54,6 +54,14 @@ function parseUint(name, fallback, max = Number.MAX_SAFE_INTEGER) {
   return value;
 }
 
+function parseOptionalBool(name) {
+  const raw = (process.env[name] || "").trim().toLowerCase();
+  if (!raw) return null;
+  if (["1", "true", "yes", "on"].includes(raw)) return true;
+  if (["0", "false", "no", "off"].includes(raw)) return false;
+  throw new Error(`${name} must be true/false`);
+}
+
 async function main() {
   const [signer] = await ethers.getSigners();
   const network = await ethers.provider.getNetwork();
@@ -65,6 +73,7 @@ async function main() {
   const channelId = parseUint("CHANNEL_ID", 0, 0xffffffff);
   const refTime = parseUint("XCM_REF_TIME", 5_000_000_000);
   const proofSize = parseUint("XCM_PROOF_SIZE", 131_072);
+  const externalXcmMode = parseOptionalBool("EXTERNAL_XCM_MODE");
 
   const vault = await ethers.getContractAt("HyperVault", vaultAddress, signer);
   const nativeMode = await vault.nativeDotMode();
@@ -91,6 +100,12 @@ async function main() {
   );
   await setConfigTx.wait();
   console.log(`✅ setXcmConfig enabled=true (tx: ${setConfigTx.hash})`);
+
+  if (externalXcmMode !== null) {
+    const setExternalTx = await vault.setExternalXcmExecutorMode(externalXcmMode);
+    await setExternalTx.wait();
+    console.log(`✅ setExternalXcmExecutorMode=${externalXcmMode} (tx: ${setExternalTx.hash})`);
+  }
 
   const state = await vault.getVaultState();
   console.log(`Live enabled: ${state._xcmEnabled}`);

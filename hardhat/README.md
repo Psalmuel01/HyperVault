@@ -17,6 +17,7 @@ Optional:
 - `HUB_SOVEREIGN` bytes32 sovereign account if already known.
 - `DOT_CURRENCY_ID`, `VDOT_CURRENCY_ID`, `DEST_CHAIN_INDEX_RAW`, `XCM_REMARK`, `CHANNEL_ID` for enabling live XCM.
 - `XCM_REF_TIME`, `XCM_PROOF_SIZE` for weight tuning.
+- `EXTERNAL_XCM_MODE=true` to use EOA relayer submission for XCM payloads.
 
 ## Script Flow
 
@@ -52,6 +53,23 @@ CHANNEL_ID=0 \
 npx hardhat run scripts/configure-live-xcm.js --network polkadotTestnet
 ```
 
+Recommended on current Polkadot Hub testnet:
+
+```bash
+VAULT_ADDRESS=0x... \
+DOT_CURRENCY_ID=0x0800 \
+VDOT_CURRENCY_ID=0x0900 \
+DEST_CHAIN_INDEX_RAW=0x01 \
+XCM_REMARK=HyperVault \
+CHANNEL_ID=0 \
+EXTERNAL_XCM_MODE=true \
+npx hardhat run scripts/configure-live-xcm.js --network polkadotTestnet
+```
+
+Why external mode: on current Hub testnet, `IXcm.send` succeeds from mapped EOAs but
+can revert for contract-origin calls. External mode keeps vault accounting on-chain
+and relays the prepared XCM payload from your signer.
+
 If live XCM needs to be paused quickly:
 
 ```bash
@@ -62,6 +80,18 @@ VAULT_ADDRESS=0x... npx hardhat run scripts/disable-live-xcm.js --network polkad
 
 ```bash
 VAULT_ADDRESS=0x... npx hardhat run scripts/test-deposit.js --network polkadotTestnet
+```
+
+For external relayer mode, automatically submit the prepared XCM in the same run:
+
+```bash
+VAULT_ADDRESS=0x... RELAY_XCM_AFTER_DEPOSIT=true npx hardhat run scripts/test-deposit.js --network polkadotTestnet
+```
+
+Or relay later from a deposit tx hash:
+
+```bash
+VAULT_ADDRESS=0x... DEPOSIT_TX=0x... npx hardhat run scripts/relay-xcm-from-tx.js --network polkadotTestnet
 ```
 
 If using test ERC20 (like `tDOT`) and your balance is low, mint first:

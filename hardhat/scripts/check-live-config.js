@@ -39,6 +39,7 @@ async function main() {
   const xcmRefTime = await vault.xcmRefTime();
   const xcmProofSize = await vault.xcmProofSize();
   const hubSovereign = await vault.hubSovereign();
+  const externalXcmMode = await vault.externalXcmExecutorMode();
 
   const dotAddress = nativeMode
     ? ethers.ZeroAddress
@@ -69,6 +70,7 @@ async function main() {
   console.log(`  Proof size       : ${xcmProofSize}`);
   console.log(`  Hub sovereign    : ${hubSovereign}`);
   console.log(`  XCM enabled      : ${state._xcmEnabled}`);
+  console.log(`  External XCM mode: ${externalXcmMode}`);
   console.log(`  XCM configured   : ${isConfigured}`);
   console.log(`  Paused           : ${state._paused}`);
   console.log(`  Total deposited  : ${ethers.formatUnits(state._totalDotDeposited, dotDecimals)}`);

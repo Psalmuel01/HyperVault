@@ -99,11 +99,16 @@ library XcmBuilder {
         // 4) RefundSurplus
         bytes memory refundSurplus = hex"14";
 
-        // 5) DepositAsset (wild all-of relay fungible) back to beneficiary AccountId32.
+        // 5) DepositAsset.
+        //    AssetFilter::Wild(AllOf(id=Concrete(parents:1,Here), fun=Fungible))
+        //      = 0x01 0x01 0x00 0x010000 0x00
+        //    beneficiary Location:
+        //      parents=0, interior=X1(AccountId32(network=Any, id=hubSovereign))
+        //      = 0x00 0x01 0x01 0x00 <32 bytes>
         bytes memory depositAsset = abi.encodePacked(
-            hex"0D",         // DepositAsset
-            hex"010101000000", // AssetFilter::Wild(AllOf(id=relay-here, fun=Fungible))
-            hex"01010000",   // beneficiary Location { parents:0, interior:X1(AccountId32(network=Any)) }
+            hex"0D",           // DepositAsset
+            hex"01010001000000", // Wild(AllOf(id=Concrete(Location(parents:1,Here)), fun=Fungible))
+            hex"00010100",     // beneficiary Location { parents:0, interior:X1(AccountId32(network=Any)) }
             hubSovereign
         );
 

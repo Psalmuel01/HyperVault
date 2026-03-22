@@ -9,6 +9,8 @@
 const hre = require("hardhat");
 const { ethers } = hre;
 const fs = require("fs");
+const XCM_PRECOMPILE = "0x00000000000000000000000000000000000a0000";
+const XCM_IFACE = new ethers.Interface(["function send(bytes dest, bytes message)"]);
 
 function loadEnvFileValue(path, key) {
   if (!fs.existsSync(path)) return null;
@@ -26,6 +28,11 @@ function loadEnvFileValue(path, key) {
 function normalizeAddress(value) {
   const raw = (value || "").trim();
   return /^0x[a-fA-F0-9]{40}$/.test(raw) ? raw : null;
+}
+
+function parseBool(value) {
+  const raw = (value || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
 }
 
 async function main() {
@@ -49,6 +56,7 @@ async function main() {
 
   const vault = await ethers.getContractAt("HyperVault", vaultAddress, signer);
   const nativeMode = await vault.nativeDotMode();
+  const externalXcmMode = await vault.externalXcmExecutorMode();
   const dotDecimals = Number(await vault.dotDecimals());
   const dotSymbol = dotDecimals === 10 ? "DOT/PAS" : "TOKEN";
   const resolvedDotAddress = nativeMode
@@ -58,6 +66,7 @@ async function main() {
     ? null
     : await ethers.getContractAt("IERC20", resolvedDotAddress, signer);
   console.log(`  Mode   : ${nativeMode ? "NATIVE" : "ERC20"}`);
+  console.log(`  XCM dispatch mode: ${externalXcmMode ? "EXTERNAL RELAYER" : "IN-CONTRACT"}`);
   console.log(`  DOT    : ${nativeMode ? "(native chain token)" : resolvedDotAddress}`);
 
   const amountHuman = (process.env.DEPOSIT_AMOUNT || "5").trim();
@@ -100,6 +109,31 @@ async function main() {
   if (depositedEvent) {
     console.log(`    Shares issued : ${depositedEvent.args.sharesIssued.toString()}`);
     console.log(`    Share price   : ${depositedEvent.args.sharePrice.toString()}`);
+  }
+
+  const preparedEvent = receipt.logs
+    .map(log => { try { return vault.interface.parseLog(log); } catch { return null; } })
+    .find(e => e?.name === "XcmMessagePrepared");
+  const relayed = parseBool(process.env.RELAY_XCM_AFTER_DEPOSIT || "");
+  if (preparedEvent) {
+    const dest = preparedEvent.args.dest;
+    const message = preparedEvent.args.message;
+    console.log(`    XCM prepared  : yes`);
+    console.log(`    Dest bytes    : ${dest}`);
+    console.log(`    Message bytes : ${message}`);
+
+    if (relayed) {
+      console.log(`    Relaying prepared XCM from signer...`);
+      const relayTx = await signer.sendTransaction({
+        to: XCM_PRECOMPILE,
+        data: XCM_IFACE.encodeFunctionData("send", [dest, message]),
+        gasLimit: 2_000_000
+      });
+      const relayRcpt = await relayTx.wait();
+      console.log(`    ✅ Relayed (tx: ${relayTx.hash}, status=${relayRcpt.status})`);
+    } else if (externalXcmMode) {
+      console.log(`    ℹ External mode is ON. Set RELAY_XCM_AFTER_DEPOSIT=true to submit XCM now.`);
+    }
   }
 
   // Read position

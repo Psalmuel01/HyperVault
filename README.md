@@ -3,7 +3,7 @@
 HyperVault is a Solidity vault targeting **Polkadot Hub (EVM)** that:
 
 1. Accepts canonical hub token deposits (`PAS` on testnet, `DOT` on mainnet)
-2. Dispatches XCM messages to Bifrost for `DOT -> vDOT`
+2. Builds and dispatches XCM messages to Bifrost for `DOT -> vDOT`
 3. Tracks user shares in-vault
 4. Handles async redemption (`vDOT -> DOT`) and user claims
 
@@ -50,7 +50,7 @@ USE_NATIVE_DOT=true npx hardhat run scripts/deploy-all.js --network polkadotTest
 # or (fallback only): DOT_ERC20_ADDRESS=0x... npx hardhat run scripts/deploy-all.js --network polkadotTestnet
 npx hardhat run scripts/probe-hub-precompiles.js --network polkadotTestnet
 VAULT_ADDRESS=0x... HUB_SOVEREIGN=0x... npx hardhat run scripts/set-hub-sovereign.js --network polkadotTestnet
-VAULT_ADDRESS=0x... DOT_CURRENCY_ID=0x0800 VDOT_CURRENCY_ID=0x0900 DEST_CHAIN_INDEX_RAW=0x01 XCM_REMARK=HyperVault CHANNEL_ID=0 npx hardhat run scripts/configure-live-xcm.js --network polkadotTestnet
+VAULT_ADDRESS=0x... DOT_CURRENCY_ID=0x0800 VDOT_CURRENCY_ID=0x0900 DEST_CHAIN_INDEX_RAW=0x01 XCM_REMARK=HyperVault CHANNEL_ID=0 EXTERNAL_XCM_MODE=true npx hardhat run scripts/configure-live-xcm.js --network polkadotTestnet
 DOT_ERC20_ADDRESS=0x... AMOUNT=50 npx hardhat run scripts/mint-test-token.js --network polkadotTestnet
 VAULT_ADDRESS=0x... npx hardhat run scripts/check-live-config.js --network polkadotTestnet
 ```
