@@ -56,20 +56,13 @@ export interface Transaction {
 
 const MOCK_APY = 15.2;
 const NATIVE_WALLET_DECIMALS = 18;
+const ACTIVITY_LOOKBACK_BLOCKS = 20_000n;
 
 const generateTxHash = () =>
   '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
 
 const shortenAddress = (addr: string) =>
   addr.slice(0, 6) + '...' + addr.slice(-4);
-
-const MOCK_TRANSACTIONS: Transaction[] = [
-  { id: '1', type: 'deposit', user: '0x7a3b...4f2e', amount: 250, shares: 243.9, timestamp: Date.now() - 120000, status: 'confirmed', txHash: generateTxHash() },
-  { id: '2', type: 'xcm_dispatch', user: '0x7a3b...4f2e', amount: 250, timestamp: Date.now() - 118000, status: 'confirmed', txHash: generateTxHash() },
-  { id: '3', type: 'deposit', user: '0x9c1d...8a3f', amount: 500, shares: 487.8, timestamp: Date.now() - 60000, status: 'confirmed', txHash: generateTxHash() },
-  { id: '4', type: 'yield_accrual', user: 'vault', amount: 0.42, timestamp: Date.now() - 30000, status: 'confirmed', txHash: generateTxHash() },
-  { id: '5', type: 'xcm_dispatch', user: '0x9c1d...8a3f', amount: 500, timestamp: Date.now() - 58000, status: 'dispatched', txHash: generateTxHash() },
-];
 
 // ─────────────────────────────────────────────────────────────
 //  Helper: check if contract integration is configured
@@ -112,7 +105,7 @@ export function useVault() {
 
   // ── Pending transaction tracking ───────────────────────────
   const [pendingTx, setPendingTx] = useState<{ type: string; hash: string } | null>(null);
-  const [transactions, setTransactions] = useState<Transaction[]>(MOCK_TRANSACTIONS);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
 
   // ── Mock fallback state (when no contract) ─────────────────
   const [mockDotBalance, setMockDotBalance] = useState(100);
@@ -267,9 +260,11 @@ export function useVault() {
     const fetchEvents = async () => {
       try {
         const currentBlock = await publicClient.getBlockNumber();
-        const fromBlock = currentBlock > 500n ? currentBlock - 500n : 0n;
+        const fromBlock = currentBlock > ACTIVITY_LOOKBACK_BLOCKS
+          ? currentBlock - ACTIVITY_LOOKBACK_BLOCKS
+          : 0n;
 
-        const [depositLogs, withdrawLogs, xcmLogs] = await Promise.all([
+        const [depositLogs, withdrawInitiatedLogs, withdrawalCompletedLogs, xcmLogs] = await Promise.all([
           publicClient.getLogs({
             address: VAULT_ADDRESS,
             event: {
@@ -303,6 +298,20 @@ export function useVault() {
             address: VAULT_ADDRESS,
             event: {
               type: 'event',
+              name: 'WithdrawalCompleted',
+              inputs: [
+                { indexed: true, name: 'user', type: 'address' },
+                { indexed: false, name: 'dotReturned', type: 'uint256' },
+                { indexed: false, name: 'yieldEarned', type: 'uint256' },
+              ],
+            },
+            fromBlock,
+            toBlock: 'latest',
+          }),
+          publicClient.getLogs({
+            address: VAULT_ADDRESS,
+            event: {
+              type: 'event',
               name: 'XcmDispatched',
               inputs: [
                 { indexed: true, name: 'user', type: 'address' },
@@ -317,6 +326,33 @@ export function useVault() {
         ]);
 
         const parsed: Transaction[] = [];
+        const allLogs = [...depositLogs, ...withdrawInitiatedLogs, ...withdrawalCompletedLogs, ...xcmLogs];
+        const uniqueBlockNumbers = Array.from(
+          new Set(
+            allLogs
+              .map((log) => log.blockNumber?.toString())
+              .filter((value): value is string => !!value),
+          ),
+        );
+
+        const blockTimestampEntries = await Promise.all(
+          uniqueBlockNumbers.map(async (blockNumberStr) => {
+            const block = await publicClient.getBlock({ blockNumber: BigInt(blockNumberStr) });
+            return [blockNumberStr, Number(block.timestamp) * 1000] as const;
+          }),
+        );
+        const blockTimestamps = new Map<string, number>(blockTimestampEntries);
+
+        const getLogTimestamp = (log: ViemLog) => {
+          const blockNumberStr = log.blockNumber?.toString();
+          if (!blockNumberStr) return Date.now();
+          return blockTimestamps.get(blockNumberStr) ?? Date.now();
+        };
+
+        const formatActor = (actor: Address) =>
+          address && actor.toLowerCase() === address.toLowerCase()
+            ? 'You'
+            : shortenAddress(actor);
 
         for (const log of depositLogs) {
           const args = (log as ViemLog & { args: { user: Address; dotAmount: bigint; sharesIssued: bigint } }).args;
@@ -324,25 +360,39 @@ export function useVault() {
           parsed.push({
             id: `${log.transactionHash}-${log.logIndex}`,
             type: 'deposit',
-            user: shortenAddress(args.user),
+            user: formatActor(args.user),
             amount: fmtDot(args.dotAmount, tokenDecimals),
             shares: fmtShares(args.sharesIssued),
-            timestamp: Date.now(), // Block timestamps need separate fetch; using now as approximation
+            timestamp: getLogTimestamp(log),
             status: 'confirmed',
             txHash: log.transactionHash || '',
           });
         }
 
-        for (const log of withdrawLogs) {
+        for (const log of withdrawInitiatedLogs) {
           const args = (log as ViemLog & { args: { user: Address; sharesBurned: bigint; dotEstimate: bigint } }).args;
           const tokenDecimals = Number(vaultDotDecimalsRaw ?? dotDecimalsRaw ?? DOT_DECIMALS);
           parsed.push({
             id: `${log.transactionHash}-${log.logIndex}`,
             type: 'withdraw',
-            user: shortenAddress(args.user),
+            user: formatActor(args.user),
             amount: fmtDot(args.dotEstimate, tokenDecimals),
             shares: fmtShares(args.sharesBurned),
-            timestamp: Date.now(),
+            timestamp: getLogTimestamp(log),
+            status: 'confirmed',
+            txHash: log.transactionHash || '',
+          });
+        }
+
+        for (const log of withdrawalCompletedLogs) {
+          const args = (log as ViemLog & { args: { user: Address; dotReturned: bigint } }).args;
+          const tokenDecimals = Number(vaultDotDecimalsRaw ?? dotDecimalsRaw ?? DOT_DECIMALS);
+          parsed.push({
+            id: `${log.transactionHash}-${log.logIndex}`,
+            type: 'claim',
+            user: formatActor(args.user),
+            amount: fmtDot(args.dotReturned, tokenDecimals),
+            timestamp: getLogTimestamp(log),
             status: 'confirmed',
             txHash: log.transactionHash || '',
           });
@@ -354,9 +404,9 @@ export function useVault() {
           parsed.push({
             id: `${log.transactionHash}-${log.logIndex}`,
             type: 'xcm_dispatch',
-            user: shortenAddress(args.user),
+            user: formatActor(args.user),
             amount: fmtDot(args.dotAmount, tokenDecimals),
-            timestamp: Date.now(),
+            timestamp: getLogTimestamp(log),
             status: args.live ? 'dispatched' : 'confirmed',
             txHash: log.transactionHash || '',
           });
@@ -365,9 +415,7 @@ export function useVault() {
         // Sort newest first
         parsed.sort((a, b) => b.timestamp - a.timestamp);
 
-        if (parsed.length > 0) {
-          setTransactions(parsed.slice(0, 10));
-        }
+        setTransactions(parsed.slice(0, 10));
       } catch (err) {
         // Silently fail — events are not critical and might not exist on new deployments
         console.warn('Failed to fetch events:', err);
@@ -377,7 +425,7 @@ export function useVault() {
     fetchEvents();
     const interval = setInterval(fetchEvents, 30_000);
     return () => clearInterval(interval);
-  }, [contractReady, publicClient, isConnected, dotDecimalsRaw, vaultDotDecimalsRaw]);
+  }, [contractReady, publicClient, isConnected, dotDecimalsRaw, vaultDotDecimalsRaw, address]);
 
   const waitAndRefresh = useCallback(async (hash: `0x${string}`) => {
     if (!publicClient) return;

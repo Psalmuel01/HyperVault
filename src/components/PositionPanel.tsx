@@ -70,7 +70,7 @@ const PositionPanel = ({
         <div className="bg-muted rounded-md p-3 space-y-2">
           <p className="text-[10px] font-ui font-semibold text-muted-foreground tracking-[0.14em] uppercase">Pending Withdrawal</p>
           <p className="text-sm font-ui text-foreground">
-            {position.pendingWithdrawal.toFixed(4)} {tokenSymbol} is ready once redeem settles.
+            {position.pendingWithdrawal.toFixed(4)} {tokenSymbol} is ready to claim now.
           </p>
           <Button variant="vault" className="w-full py-4" onClick={onClaimWithdrawal}>
             {`Claim Redeemed ${tokenSymbol}`}

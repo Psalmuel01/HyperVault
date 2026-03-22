@@ -23,16 +23,29 @@ const statusDots: Record<string, string> = {
 
 const ActivityFeed = ({ transactions, tokenSymbol }: ActivityFeedProps) => {
   const recent = transactions.slice(0, 6);
+  const formatAgo = (timestamp: number) => {
+    const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h`;
+    return `${Math.floor(hours / 24)}d`;
+  };
 
   return (
     <div className="bg-card border border-border rounded-lg p-5 space-y-3">
       <h3 className="font-display text-lg text-foreground">Activity</h3>
 
       <div className="space-y-2">
+        {recent.length === 0 ? (
+          <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-4 text-sm font-ui text-muted-foreground">
+            No on-chain activity yet for this vault/account.
+          </div>
+        ) : null}
         {recent.map((tx) => {
           const info = typeLabels[tx.type] || { label: tx.type, color: 'text-foreground' };
-          const ago = Math.floor((Date.now() - tx.timestamp) / 1000);
-          const timeStr = ago < 60 ? `${ago}s` : `${Math.floor(ago / 60)}m`;
+          const timeStr = formatAgo(tx.timestamp);
 
           return (
             <div key={tx.id} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
